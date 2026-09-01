@@ -1,4 +1,4 @@
-import { Schema, model, models, Model, InferSchemaType } from "mongoose";
+import { Schema, model, models, Model, InferSchemaType, Connection } from "mongoose";
 
 const PrinterSessionSchema = new Schema(
   {
@@ -42,6 +42,9 @@ PrinterSessionSchema.index({ userId: 1, sessionId: 1 });
 
 export type IPrinterSession = InferSchemaType<typeof PrinterSessionSchema>;
 
-export const PrinterSession =
-  (models.PrinterSession as Model<IPrinterSession>) ||
-  model<IPrinterSession>("PrinterSession", PrinterSessionSchema);
+export function getPrinterSessionModel(conn: Connection): Model<IPrinterSession> {
+  return (
+    (conn.models.PrinterSession as Model<IPrinterSession>) ??
+    conn.model<IPrinterSession>("PrinterSession", PrinterSessionSchema)
+  );
+}

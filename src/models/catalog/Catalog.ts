@@ -1,6 +1,7 @@
-import mongoose from "mongoose";
+import mongoose, { Connection, Model } from "mongoose";
 
 export interface ICatalog {
+  _id: mongoose.Types.ObjectId;
   sku: string;
   designNumber: string;
   rfid: string;
@@ -39,6 +40,9 @@ const CatalogSchema = new mongoose.Schema<ICatalog>(
   }
 )
 
-export const Catalog =
-  ( mongoose.models.Catalog as mongoose.Model<ICatalog> ) ||
-  mongoose.model<ICatalog>("Catalog", CatalogSchema);
+export function getCatalogModel(conn: Connection): Model<ICatalog> {
+  return (
+    (conn.models.Catalog as Model<ICatalog>) ??
+    conn.model<ICatalog>("Catalog", CatalogSchema)
+  );
+}

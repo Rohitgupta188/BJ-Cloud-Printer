@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+import mongoose, { Connection, Model } from "mongoose";
 
 export interface ISession {
   sessionId: string;
@@ -10,6 +10,7 @@ export interface ISession {
 }
 
 export interface IUser {
+  _id: mongoose.Types.ObjectId;
   username: string;
   email: string;
   password: string;
@@ -27,6 +28,9 @@ const UserSchema = new mongoose.Schema<IUser>(
   }
 )
 
-export const User =
-  ( mongoose.models.User as mongoose.Model<IUser> ) ||
-  mongoose.model<IUser>("User", UserSchema);
+export function getUserModel(conn: Connection): Model<IUser> {
+  return (
+    (conn.models.User as Model<IUser>) ??
+    conn.model<IUser>("User", UserSchema)
+  );
+}
