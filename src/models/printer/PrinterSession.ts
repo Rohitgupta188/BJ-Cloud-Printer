@@ -29,6 +29,11 @@ const PrinterSessionSchema = new Schema(
       default: null,
     },
 
+    lastRefreshAt: {
+      type: Date,
+      default: () => new Date(),
+    },
+
     userAgent: {
       type: String,
     },
@@ -39,6 +44,12 @@ const PrinterSessionSchema = new Schema(
 );
 
 PrinterSessionSchema.index({ userId: 1, sessionId: 1 });
+
+PrinterSessionSchema.index(
+  { lastRefreshAt: 1 },
+  { expireAfterSeconds: 7 * 24 * 60 * 60 } // 7 days
+);
+
 
 export type IPrinterSession = InferSchemaType<typeof PrinterSessionSchema>;
 

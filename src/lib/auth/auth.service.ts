@@ -193,6 +193,7 @@ export async function rotateRefreshToken(
         refreshTokenHash: newRefreshTokenHash,
         lastRefreshTokenHash: incomingHash,
         refreshTokenRotatedAt: new Date(),
+        lastRefreshAt: new Date(), // extends the 7-day inactivity window
       },
     },
     { new: true }

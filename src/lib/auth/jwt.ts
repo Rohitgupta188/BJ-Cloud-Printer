@@ -10,16 +10,22 @@ function requiredEnv(name: string): string {
   return value;
 }
 
-const JWT_SECRET = requiredEnv("JWT_SECRET");
+const JWT_ACCESS_SECRET = requiredEnv("JWT_ACCESS_SECRET");
+const JWT_REFRESH_SECRET = requiredEnv("JWT_REFRESH_SECRET");
 const JWT_ISSUER = requiredEnv("JWT_ISSUER");
 const JWT_AUDIENCE = requiredEnv("JWT_AUDIENCE");
 const ACCESS_TOKEN_TTL = requiredEnv("ACCESS_TOKEN_TTL");
 const REFRESH_TOKEN_TTL = requiredEnv("REFRESH_TOKEN_TTL");
 
-const secretKey = new TextEncoder().encode(JWT_SECRET);
+const accessSecretKey = new TextEncoder().encode(JWT_ACCESS_SECRET);
+const refreshSecretKey = new TextEncoder().encode(JWT_REFRESH_SECRET);
 
-function getSecretKey(): Uint8Array {
-  return secretKey;
+function getAccessSecretKey(): Uint8Array {
+  return accessSecretKey;
+}
+
+function getRefreshSecretKey(): Uint8Array {
+  return refreshSecretKey;
 }
 
 export interface JwtPayload {
@@ -52,7 +58,7 @@ export async function signAccessToken(
     .setAudience(JWT_AUDIENCE)
     .setExpirationTime(ACCESS_TOKEN_TTL)
     .setJti(crypto.randomUUID())
-    .sign(getSecretKey());
+    .sign(getAccessSecretKey());
 }
 
 async function signRefreshToken(
@@ -65,7 +71,7 @@ async function signRefreshToken(
     .setAudience(JWT_AUDIENCE)
     .setExpirationTime(REFRESH_TOKEN_TTL)
     .setJti(crypto.randomUUID())
-    .sign(getSecretKey());
+    .sign(getRefreshSecretKey());
 }
 
 export async function signTokenPair(
@@ -100,8 +106,11 @@ export async function verifyToken(
   token: string,
   expectedType?: "access" | "refresh"
 ): Promise<VerifyResult> {
+  const key =
+    expectedType === "refresh" ? getRefreshSecretKey() : getAccessSecretKey();
+
   try {
-    const { payload } = await jwtVerify(token, getSecretKey(), {
+    const { payload } = await jwtVerify(token, key, {
       issuer: JWT_ISSUER,
       audience: JWT_AUDIENCE,
       algorithms: ["HS256"],
