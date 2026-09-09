@@ -8,6 +8,7 @@ import {
 } from "./cookies";
 import { rotateRefreshToken } from "./auth.service";
 import { getPrinterModels } from "@/lib/db/printer";
+import { applySecurityHeaders } from "@/lib/security";
 
 export type AuthenticatedRequest = {
   user: JwtPayload;
@@ -44,12 +45,16 @@ export function withAuth<T = Record<string, unknown>>(
           options?.requireRole &&
           result.payload.role !== options.requireRole
         ) {
-          return NextResponse.json(
-            { error: "Forbidden: Insufficient permissions" },
-            { status: 403 }
+          return applySecurityHeaders(
+            NextResponse.json(
+              { error: "Forbidden: Insufficient permissions" },
+              { status: 403 }
+            )
           );
         }
-        return handler(req, { ...context, user: result.payload });
+        return applySecurityHeaders(
+          await handler(req, { ...context, user: result.payload })
+        );
       }
     }
 
@@ -61,7 +66,7 @@ export function withAuth<T = Record<string, unknown>>(
         { status: 401 }
       );
       await clearAuthCookies(response);
-      return response;
+      return applySecurityHeaders(response);
     }
 
     const refreshResult = await rotateRefreshToken(refreshToken);
@@ -75,16 +80,18 @@ export function withAuth<T = Record<string, unknown>>(
       if (!isConcurrent) {
         await clearAuthCookies(response);
       }
-      return response;
+      return applySecurityHeaders(response);
     }
 
     if (
       options?.requireRole &&
       refreshResult.user.role !== options.requireRole
     ) {
-      return NextResponse.json(
-        { error: "Forbidden: Insufficient permissions" },
-        { status: 403 }
+      return applySecurityHeaders(
+        NextResponse.json(
+          { error: "Forbidden: Insufficient permissions" },
+          { status: 403 }
+        )
       );
     }
 
@@ -105,7 +112,7 @@ export function withAuth<T = Record<string, unknown>>(
       refreshResult.refreshToken,
       response
     );
-    return response;
+    return applySecurityHeaders(response);
   };
 }
 
