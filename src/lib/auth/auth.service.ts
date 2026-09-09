@@ -170,6 +170,7 @@ export async function rotateRefreshToken(
       ok: false,
       error: "Session invalid. Please log in again.",
       status: 401,
+      code: "REFRESH_TOKEN_REUSE",
     };
   }
 
@@ -196,7 +197,7 @@ export async function rotateRefreshToken(
         lastRefreshAt: new Date(), // extends the 7-day inactivity window
       },
     },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   if (!updatedSession) {
