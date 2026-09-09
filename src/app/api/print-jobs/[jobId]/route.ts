@@ -3,7 +3,6 @@ import { withAuth } from "@/lib/auth";
 import { connectToPrinterDb, getPrinterModels } from "@/lib/db/printer";
 import { handleRoute, notFound, success } from "@/lib/api-handling/api-response";
 
-// GET /api/print-jobs/[jobId] — fetch a single job and its full lifecycle
 export const GET = withAuth(
   async (
     _request: NextRequest,
