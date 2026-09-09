@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { logoutUser, clearAuthCookies } from "@/lib/auth";
-import { validateCsrf, applySecurityHeaders, auditLog } from "@/lib/security";
+import { validateCsrf, auditLog } from "@/lib/security";
 import { requireClientIp } from "@/lib/security";
+import { forbidden, success } from "@/lib/api-handling/api-response";
 
 export const POST = withAuth(async (req: NextRequest, ctx) => {
   const ip = requireClientIp(req);
@@ -14,12 +15,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
       traceId,
       context: { endpoint: "/api/auth/logout" },
     });
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "CSRF validation failed" },
-        { status: 403 }
-      )
-    );
+    return forbidden();
   }
 
   try {
@@ -35,11 +31,7 @@ export const POST = withAuth(async (req: NextRequest, ctx) => {
     traceId,
   });
 
-  const response = NextResponse.json(
-    { success: true, data: { message: "Signed out successfully" } },
-    { status: 200 }
-  );
-
+  const response = success({ message: "Signed out successfully" });
   await clearAuthCookies(response);
-  return applySecurityHeaders(response);
+  return response;
 });

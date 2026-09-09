@@ -1,12 +1,21 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb, getPrinterModels } from "@/lib/db/printer";
 import { generateSku } from "@/lib/sku/generate";
-import { rateLimit, validateCsrf, applySecurityHeaders, auditLog } from "@/lib/security";
+import { rateLimit, validateCsrf, auditLog } from "@/lib/security";
 import { requireClientIp } from "@/lib/security";
 import type { PrintJobStatus } from "@/models/printer/PrintJob";
+import {
+  success,
+  created,
+  error,
+  forbidden,
+  tooManyRequests,
+  validationFailed,
+  serverError,
+} from "@/lib/api-handling/api-response";
 
 const VALID_STATUSES = [
   "PENDING",
@@ -68,19 +77,14 @@ export const GET = withAuth(async (request: NextRequest) => {
     const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10));
     const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "20", 10)));
     const rawStatus = url.searchParams.get("status");
-    
+
     let statusFilter: PrintJobStatus | undefined;
     if (rawStatus !== null) {
       const parsed = StatusQuerySchema.safeParse(rawStatus);
       if (!parsed.success) {
-        return applySecurityHeaders(
-          NextResponse.json(
-            {
-              success: false,
-              error: `Invalid status "${rawStatus}". Must be one of: ${VALID_STATUSES.join(", ")}.`,
-            },
-            { status: 400 }
-          )
+        return error(
+          `Invalid status "${rawStatus}". Must be one of: ${VALID_STATUSES.join(", ")}.`,
+          400
         );
       }
       statusFilter = parsed.data;
@@ -100,20 +104,10 @@ export const GET = withAuth(async (request: NextRequest) => {
       PrintJob.countDocuments(filter),
     ]);
 
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: true, data: { jobs, total, page, limit, pages: Math.ceil(total / limit) } },
-        { status: 200 }
-      )
-    );
+    return success({ jobs, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err) {
     console.error("[GET /api/print-jobs]", err);
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "Internal server error" },
-        { status: 500 }
-      )
-    );
+    return serverError();
   }
 });
 
@@ -127,12 +121,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       traceId,
       context: { endpoint: "/api/print-jobs" },
     });
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "CSRF validation failed" },
-        { status: 403 }
-      )
-    );
+    return forbidden();
   }
 
   const rl = await rateLimit.global(ip);
@@ -143,40 +132,20 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       traceId,
       context: { limiter: "global", limit: rl.limit, remaining: rl.remaining },
     });
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "Too many requests. Please slow down." },
-        { status: 429, headers: rl.headers }
-      )
-    );
+    return tooManyRequests("Too many requests. Please slow down.", rl.headers);
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "Invalid request body" },
-        { status: 400 }
-      )
-    );
+    return error("Invalid request body", 400);
   }
 
-  const parsed = CreatePrintJobSchema.safeParse(body);
-  if (!parsed.success) {
-    return applySecurityHeaders(
-      NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: parsed.error.issues.map((i) => ({
-            field: i.path.join("."),
-            message: i.message,
-          })),
-        },
-        { status: 422 }
-      )
+  const parsedBody = CreatePrintJobSchema.safeParse(body);
+  if (!parsedBody.success) {
+    return validationFailed(
+      parsedBody.error.issues.map((i) => ({ field: i.path.join("."), message: i.message }))
     );
   }
 
@@ -190,7 +159,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     metalPurity,
     collectionLine,
     imageUrl,
-  } = parsed.data;
+  } = parsedBody.data;
 
   const printerId = process.env.MQTT_PRINTER_ID ?? "mumbai-01";
   const payloadType = "TSPL" as const;
@@ -209,7 +178,6 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
     console.log(`[print-jobs] SKU generated: "${sku}" for user="${ctx.user.sub}"`);
 
-    // Step 2: Build TSPL payload internally.
     const payload = buildTsplPayload(sku, {
       designNumber,
       grossWeight,
@@ -218,7 +186,6 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       metalPurity,
     });
 
-    // Step 3: Save print job to BJ-Printer DB.
     const jobId = crypto.randomUUID();
     const { PrintJob } = await getPrinterModels();
 
@@ -231,7 +198,6 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       status: "PENDING",
       createdBy: ctx.user.sub,
       retryCount: 0,
-      // Item metadata
       designNumber,
       grossWeight,
       netWeight,
@@ -246,36 +212,25 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
     // Phase 3 hook: MQTT publish goes here after job is saved.
 
-    return NextResponse.json(
-      {
-        success: true,
-        data: {
-          job: {
-            jobId: job.jobId,
-            sku: job.sku,
-            printerId: job.printerId,
-            payloadType: job.payloadType,
-            status: job.status,
-            createdAt: job.createdAt,
-            designNumber: job.designNumber,
-            grossWeight: job.grossWeight,
-            netWeight: job.netWeight,
-            stoneWeight: job.stoneWeight,
-            metalType: job.metalType,
-            metalPurity: job.metalPurity,
-            collectionLine: job.collectionLine,
-          },
-        },
+    return created({
+      job: {
+        jobId:         job.jobId,
+        sku:           job.sku,
+        printerId:     job.printerId,
+        payloadType:   job.payloadType,
+        status:        job.status,
+        createdAt:     job.createdAt,
+        designNumber:  job.designNumber,
+        grossWeight:   job.grossWeight,
+        netWeight:     job.netWeight,
+        stoneWeight:   job.stoneWeight,
+        metalType:     job.metalType,
+        metalPurity:   job.metalPurity,
+        collectionLine:job.collectionLine,
       },
-      { status: 201 }
-    );
+    });
   } catch (err) {
     console.error("[POST /api/print-jobs]", err);
-    return applySecurityHeaders(
-      NextResponse.json(
-        { success: false, error: "Failed to create print job" },
-        { status: 500 }
-      )
-    );
+    return serverError("Failed to create print job");
   }
 });

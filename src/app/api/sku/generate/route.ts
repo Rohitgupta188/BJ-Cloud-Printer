@@ -1,10 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { z } from "zod";
 import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb } from "@/lib/db/printer";
 import { generateSku } from "@/lib/sku/generate";
-import { validateCsrf, applySecurityHeaders } from "@/lib/security";
+import { validateCsrf } from "@/lib/security";
+import {
+  forbidden,
+  error,
+  validationFailed,
+  created,
+  serverError,
+} from "@/lib/api-handling/api-response";
 
 const Schema = z.object({
   prefix: z
@@ -16,27 +23,20 @@ const Schema = z.object({
 
 export const POST = withAuth(async (request: NextRequest) => {
   if (!validateCsrf(request)) {
-    return applySecurityHeaders(
-      NextResponse.json({ success: false, error: "CSRF validation failed" }, { status: 403 })
-    );
+    return forbidden();
   }
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ success: false, error: "Invalid request body" }, { status: 400 });
+    return error("Invalid request body", 400);
   }
 
   const parsed = Schema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Validation failed",
-        details: parsed.error.issues.map((i) => ({ field: i.path.join("."), message: i.message })),
-      },
-      { status: 422 }
+    return validationFailed(
+      parsed.error.issues.map((i) => ({ field: i.path.join("."), message: i.message }))
     );
   }
 
@@ -52,9 +52,9 @@ export const POST = withAuth(async (request: NextRequest) => {
       prefix: parsed.data.prefix.toUpperCase(),
     });
 
-    return NextResponse.json({ success: true, data: { sku } }, { status: 201 });
+    return created({ sku });
   } catch (err) {
     console.error("[POST /api/sku/generate]", err);
-    return NextResponse.json({ success: false, error: "Failed to generate SKU" }, { status: 500 });
+    return serverError("Failed to generate SKU");
   }
 });

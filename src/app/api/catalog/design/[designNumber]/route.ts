@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/auth";
-import { applySecurityHeaders } from "@/lib/security";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { getCatalogModel } from "@/models/catalog/Catalog";
+import { success, error, notFound, serverError } from "@/lib/api-handling/api-response";
 
 type Ctx = { params: Promise<{ designNumber: string }> };
 
@@ -11,9 +11,7 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
   const dn = designNumber?.trim();
 
   if (!dn) {
-    return applySecurityHeaders(
-      NextResponse.json({ success: false, error: "designNumber is required" }, { status: 400 })
-    );
+    return error("designNumber is required", 400);
   }
 
   try {
@@ -41,18 +39,12 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
     ).lean();
 
     if (!item) {
-      return applySecurityHeaders(
-        NextResponse.json({ success: false, error: "Design number not found" }, { status: 404 })
-      );
+      return notFound("Design number not found");
     }
 
-    return applySecurityHeaders(
-      NextResponse.json({ success: true, data: item }, { status: 200 })
-    );
+    return success(item);
   } catch (err) {
     console.error("[GET /api/catalog/design]", err);
-    return applySecurityHeaders(
-      NextResponse.json({ success: false, error: "Internal server error" }, { status: 500 })
-    );
+    return serverError();
   }
 });

@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb } from "@/lib/db/printer";
 import { getSkuSequenceModel } from "@/models/printer/SkuSequence";
 import { getCatalogModel } from "@/models/catalog/Catalog";
 import { getPrintJobModel } from "@/models/printer/PrintJob";
+import { error, success, serverError } from "@/lib/api-handling/api-response";
 
 function escapeRegex(text: string): string {
   return text.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
@@ -15,10 +16,7 @@ export const GET = withAuth(async (request: NextRequest) => {
   const rawPrefix = url.searchParams.get("prefix")?.trim().toUpperCase();
 
   if (!rawPrefix || !/^[A-Z0-9]+$/.test(rawPrefix)) {
-    return NextResponse.json(
-      { success: false, error: "prefix query param is required and must be alphanumeric" },
-      { status: 400 }
-    );
+    return error("prefix query param is required and must be alphanumeric", 400);
   }
 
   try {
@@ -28,7 +26,6 @@ export const GET = withAuth(async (request: NextRequest) => {
     ]);
 
     const SkuSequence = getSkuSequenceModel(printerConn);
-
     const existing = await SkuSequence.findOne({ prefix: rawPrefix }, { seq: 1 }).lean();
 
     let nextSeq: number;
@@ -53,13 +50,9 @@ export const GET = withAuth(async (request: NextRequest) => {
     }
 
     const previewSku = `${rawPrefix}${nextSeq}`;
-
-    return NextResponse.json(
-      { success: true, data: { sku: previewSku, rfid: previewSku } },
-      { status: 200 }
-    );
+    return success({ sku: previewSku, rfid: previewSku });
   } catch (err) {
     console.error("[GET /api/sku/preview]", err);
-    return NextResponse.json({ success: false, error: "Failed to preview SKU" }, { status: 500 });
+    return serverError("Failed to preview SKU");
   }
 });

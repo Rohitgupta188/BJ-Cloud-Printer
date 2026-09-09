@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import { withAuth, sanitizeUser } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { getUserModel } from "@/models/catalog/User";
+import { success, notFound, serverError } from "@/lib/api-handling/api-response";
 
 export const GET = withAuth(async (_req: NextRequest, ctx) => {
   try {
@@ -11,21 +12,12 @@ export const GET = withAuth(async (_req: NextRequest, ctx) => {
     const user = await User.findById(ctx.user.sub).select("-sessions -password");
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return notFound("User not found");
     }
 
-    return NextResponse.json(
-      { success: true, data: { user: sanitizeUser(user) } },
-      { status: 200 }
-    );
+    return success({ user: sanitizeUser(user) });
   } catch (err) {
     console.error("[/api/auth/me] Error:", err);
-    return NextResponse.json(
-      { success: false, error: "Internal server error" },
-      { status: 500 }
-    );
+    return serverError();
   }
 });
