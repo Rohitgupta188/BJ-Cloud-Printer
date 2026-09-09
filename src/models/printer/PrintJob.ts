@@ -69,6 +69,36 @@ const PrintJobSchema = new Schema(
       trim: true,
       required: true
     },
+
+    designNumber: {
+      type: String, 
+      trim: true
+    },
+    grossWeight: {
+      type: Number
+    },
+    netWeight: {
+      type: Number
+    },
+    stoneWeight: {
+      type: Number
+    },
+    metalType: {
+      type: String,
+      trim: true
+    },
+    metalPurity: {
+      type: String,
+      trim: true
+    },
+    collectionLine: {
+      type: String,
+      trim: true
+    },
+    imageUrl: {
+      type: String,
+      trim: true
+    },
   },
   {
     timestamps: true,
