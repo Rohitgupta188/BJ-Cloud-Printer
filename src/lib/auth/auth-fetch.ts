@@ -30,15 +30,16 @@ export async function authFetch(
 ): Promise<Response> {
   const res = await fetch(input, { credentials: "include", ...init });
 
-  if (res.status !== 401) {
-    return res;
+  if (res.status === 401) {
+    const refreshed = await refreshOnce();
+    if (!refreshed) return res;
+    return fetch(input, { credentials: "include", ...init });
   }
 
-  const refreshed = await refreshOnce();
-
-  if (!refreshed) {
-    return res;
+  if (res.status === 409) {
+    await refreshOnce();
+    return fetch(input, { credentials: "include", ...init });
   }
 
-  return fetch(input, { credentials: "include", ...init });
+  return res;
 }
