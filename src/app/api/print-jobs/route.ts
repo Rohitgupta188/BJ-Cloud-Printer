@@ -7,6 +7,7 @@ import { generateSku } from "@/lib/sku/generate";
 import { rateLimit, validateCsrf, auditLog } from "@/lib/security";
 import { requireClientIp } from "@/lib/security";
 import type { PrintJobStatus } from "@/models/printer/PrintJob";
+import { publishPrintJob } from "@/lib/mqtt/publisher";
 import {
   success,
   created,
@@ -211,7 +212,36 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
     console.log(`[print-jobs] Job saved: jobId="${jobId}" sku="${sku}" status="PENDING"`);
 
-    // Phase 3 hook: MQTT publish goes here after job is saved.
+    let finalStatus: PrintJobStatus = "PENDING";
+
+    try {
+      await publishPrintJob({
+        job_id:       jobId,
+        sku,
+        printer_id:   printerId,
+        payload_type: payloadType,
+        payload,
+      });
+
+      await PrintJob.updateOne(
+        { jobId },
+        { status: "MQTT_PUBLISHED", mqttPublishedAt: new Date() }
+      );
+
+      finalStatus = "MQTT_PUBLISHED";
+      console.log(`[print-jobs] MQTT_PUBLISHED jobId="${jobId}" sku="${sku}"`);
+
+    } catch (mqttErr) {
+      const errMsg = mqttErr instanceof Error ? mqttErr.message : String(mqttErr);
+      console.error(`[print-jobs] MQTT publish failed for jobId="${jobId}":`, mqttErr);
+
+      await PrintJob.updateOne(
+        { jobId },
+        { status: "MQTT_FAILED", lastError: errMsg }
+      );
+
+      finalStatus = "MQTT_FAILED";
+    }
 
     return created({
       job: {
@@ -219,7 +249,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
         sku:           job.sku,
         printerId:     job.printerId,
         payloadType:   job.payloadType,
-        status:        job.status,
+        status:        finalStatus,
         createdAt:     job.createdAt,
         designNumber:  job.designNumber,
         grossWeight:   job.grossWeight,
