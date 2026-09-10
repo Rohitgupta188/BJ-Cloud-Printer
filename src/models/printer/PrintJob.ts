@@ -3,6 +3,7 @@ import { Schema, model, models, Model, InferSchemaType, Connection } from "mongo
 export type PrintJobStatus =
   | "PENDING"
   | "MQTT_PUBLISHED"
+  | "MQTT_FAILED"
   | "AGENT_RECEIVED"
   | "COMPLETED"
   | "FAILED"
@@ -44,6 +45,7 @@ const PrintJobSchema = new Schema(
       enum: [
         "PENDING",
         "MQTT_PUBLISHED",
+        "MQTT_FAILED",
         "AGENT_RECEIVED",
         "COMPLETED",
         "FAILED",
