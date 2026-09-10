@@ -20,6 +20,7 @@ import {
 const VALID_STATUSES = [
   "PENDING",
   "MQTT_PUBLISHED",
+  "MQTT_FAILED",
   "AGENT_RECEIVED",
   "COMPLETED",
   "FAILED",
