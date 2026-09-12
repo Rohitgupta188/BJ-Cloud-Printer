@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify, errors as joseErrors } from "jose";
-import { setCsrfCookie } from "@/lib/security";
+import { setCsrfCookie, CSRF_COOKIE } from "@/lib/security";
 
 const ACCESS_COOKIE = "printer_access_token";
 const REFRESH_COOKIE = "printer_refresh_token";
@@ -45,6 +45,14 @@ async function isTokenValid(token: string): Promise<boolean> {
   }
 }
 
+
+function ensureCsrfCookie(request: NextRequest, response: NextResponse): NextResponse {
+  if (!request.cookies.get(CSRF_COOKIE)?.value) {
+    setCsrfCookie(response);
+  }
+  return response;
+}
+
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
@@ -57,6 +65,8 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       }
 
       const response = NextResponse.next();
+      // Always (re-)issue the cookie on the login page so a fresh token is
+      // available before the user submits the form.
       setCsrfCookie(response);
       return response;
     }
@@ -73,11 +83,15 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   if (accessToken && (await isTokenValid(accessToken))) {
-    return NextResponse.next();
+    // Ensure the CSRF cookie is present for already-authenticated users who
+    // bypassed /login (e.g. direct navigation or page refresh).
+    return ensureCsrfCookie(request, NextResponse.next());
   }
 
   if (refreshToken) {
-    return NextResponse.next();
+    // Token will be refreshed by the client; still ensure the CSRF cookie
+    // exists so the refresh POST itself can include the header.
+    return ensureCsrfCookie(request, NextResponse.next());
   }
 
   const loginUrl = new URL("/login", request.url);

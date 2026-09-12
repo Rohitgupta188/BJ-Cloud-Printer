@@ -51,27 +51,40 @@ function buildTsplPayload(sku: string, data: {
   designNumber?: string;
   grossWeight?: number;
   netWeight?: number;
+  stoneWeight?: number;
   metalType?: string;
   metalPurity?: string;
 }): string {
-  const gw = data.grossWeight != null ? `${data.grossWeight}g` : "";
-  const nw = data.netWeight   != null ? `${data.netWeight}g`   : "";
-  const purity = data.metalPurity ?? "";
-  const dn = data.designNumber ?? "";
+  // Helper: format value with optional suffix, or empty string if absent
+  const f = (v: string | number | undefined, suffix = "") =>
+    v != null && v !== "" ? `${v}${suffix}` : "";
 
   return [
-    `SIZE 40 mm, 30 mm`,
-    `GAP 3 mm, 0 mm`,
-    `DIRECTION 0`,
+    `SIZE 90 mm, 70 mm`,
+    `DIRECTION 0,0`,
+    `REFERENCE 0,0`,
+    `OFFSET 0 mm`,
+    `SET PEEL OFF`,
+    `SET CUTTER OFF`,
+    `SET PARTIAL_CUTTER OFF`,
+    `SET TEAR ON`,
     `CLS`,
-    `TEXT 10,5,"3",0,1,1,"${sku}"`,
-    dn     ? `TEXT 10,30,"2",0,1,1,"${dn}"` : "",
-    gw     ? `TEXT 10,50,"2",0,1,1,"GW:${gw}  NW:${nw}"` : "",
-    purity ? `TEXT 10,68,"2",0,1,1,"${purity}"` : "",
-    `BARCODE 10,88,"128",40,1,0,2,2,"${sku}"`,
-    `PRINT 1`,
-  ].filter(Boolean).join("\n");
+    `CODEPAGE 1252`,
+    `TEXT 380,105,"ROMAN.TTF",180,1,6,"D.No: ${f(data.designNumber)}"`,
+    `TEXT 380,85,"ROMAN.TTF",180,1,6,"G.Wt: ${f(data.grossWeight, "g")}"`,
+    `TEXT 380,65,"ROMAN.TTF",180,1,6,"S Wt: ${f(data.stoneWeight, "g")}"`,
+    `TEXT 380,45,"ROMAN.TTF",180,1,6,"N Wt: ${f(data.netWeight, "g")}"`,
+    `TEXT 300,45,"ROMAN.TTF",180,1,6,"KT: ${f(data.metalPurity)}"`,
+    `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
+    `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${f(data.grossWeight, "g")}"`,
+    `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${f(data.netWeight, "g")}"`,
+    `TEXT 565,42,"0",180,9,9,"${f(data.designNumber)}/${f(data.grossWeight, "g")}"`,
+    `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${f(data.metalPurity)}"`,
+    `TEXT 180,45,"ROMAN.TTF",180,1,6,"${f(data.metalType)}"`,
+    `PRINT 1,1`,
+  ].join("\r\n");
 }
+
 
 export const GET = withAuth(async (request: NextRequest) => {
   try {
@@ -184,6 +197,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       designNumber,
       grossWeight,
       netWeight,
+      stoneWeight,
       metalType,
       metalPurity,
     });

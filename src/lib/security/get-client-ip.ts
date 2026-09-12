@@ -75,6 +75,10 @@ export function getClientIp(request: NextRequest): string | null {
     if (ip) return ip;
   }
 
+  if (process.env.NODE_ENV === "development") {
+    return "127.0.0.1";
+  }
+
   return null;
 }
 
