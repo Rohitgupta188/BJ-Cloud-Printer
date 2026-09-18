@@ -47,7 +47,7 @@ const CreatePrintJobSchema = z.object({
   imageUrl:       z.string().trim().optional(),
 });
 
-function buildTsplPayload(sku: string, data: {
+function buildZplPayload(sku: string, data: {
   designNumber?: string;
   grossWeight?: number;
   netWeight?: number;
@@ -59,30 +59,37 @@ function buildTsplPayload(sku: string, data: {
   const f = (v: string | number | undefined, suffix = "") =>
     v != null && v !== "" ? `${v}${suffix}` : "";
 
+  // Label: 90 mm × 70 mm @ 300 dpi ≈ 1063 × 827 dots
+  // All fields rotated 180° (^FWI) to match original orientation.
   return [
-    `SIZE 90 mm, 70 mm`,
-    `DIRECTION 0,0`,
-    `REFERENCE 0,0`,
-    `OFFSET 0 mm`,
-    `SET PEEL OFF`,
-    `SET CUTTER OFF`,
-    `SET PARTIAL_CUTTER OFF`,
-    `SET TEAR ON`,
-    `CLS`,
-    `CODEPAGE 1252`,
-    `TEXT 380,105,"ROMAN.TTF",180,1,6,"D.No: ${f(data.designNumber)}"`,
-    `TEXT 380,85,"ROMAN.TTF",180,1,6,"G.Wt: ${f(data.grossWeight, "g")}"`,
-    `TEXT 380,65,"ROMAN.TTF",180,1,6,"S Wt: ${f(data.stoneWeight, "g")}"`,
-    `TEXT 380,45,"ROMAN.TTF",180,1,6,"N Wt: ${f(data.netWeight, "g")}"`,
-    `TEXT 300,45,"ROMAN.TTF",180,1,6,"KT: ${f(data.metalPurity)}"`,
-    `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
-    `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${f(data.grossWeight, "g")}"`,
-    `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${f(data.netWeight, "g")}"`,
-    `TEXT 565,42,"0",180,9,9,"${f(data.designNumber)}/${f(data.grossWeight, "g")}"`,
-    `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${f(data.metalPurity)}"`,
-    `TEXT 180,45,"ROMAN.TTF",180,1,6,"${f(data.metalType)}"`,
-    `PRINT 1,1`,
-  ].join("\r\n");
+    `^XA`,
+    `^PW1063`,                                          // label width  (90 mm)
+    `^LL0827`,                                          // label length (70 mm)
+    `^FWI`,                                             // rotate all fields 180°
+    `^CI28`,                                            // UTF-8 codepage
+
+    // --- Right column: design/weight labels (mirrored from TSPL coords) ---
+    `^FO380,105^A0,25,25^FDD.No: ${f(data.designNumber)}^FS`,
+    `^FO380,85^A0,25,25^FDG.Wt: ${f(data.grossWeight, "g")}^FS`,
+    `^FO380,65^A0,25,25^FDS Wt: ${f(data.stoneWeight, "g")}^FS`,
+    `^FO380,45^A0,25,25^FDN Wt: ${f(data.netWeight, "g")}^FS`,
+    `^FO300,45^A0,25,25^FDKT: ${f(data.metalPurity)}^FS`,
+
+    // --- QR Code ---
+    `^FO150,100^BQN,2,3^FDMM,A${sku}^FS`,
+
+    // --- Left column: duplicate weight + purity/metal ---
+    `^FO230,85^A0,25,25^FDG.Wt: ${f(data.grossWeight, "g")}^FS`,
+    `^FO230,65^A0,25,25^FDN Wt: ${f(data.netWeight, "g")}^FS`,
+    `^FO230,45^A0,25,25^FDKT: ${f(data.metalPurity)}^FS`,
+    `^FO180,45^A0,25,25^FD${f(data.metalType)}^FS`,
+
+    // --- Large design/weight header ---
+    `^FO565,42^A0,45,45^FD${f(data.designNumber)}/${f(data.grossWeight, "g")}^FS`,
+
+    `^PQ1,0,1,Y`,                                       // print 1 copy
+    `^XZ`,
+  ].join("\n");
 }
 
 
@@ -177,7 +184,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
   } = parsedBody.data;
 
   const printerId = process.env.MQTT_PRINTER_ID ?? "mumbai-01";
-  const payloadType = "TSPL" as const;
+  const payloadType = "ZPL" as const;
 
   try {
     const [catalogConn, printerConn] = await Promise.all([
@@ -193,7 +200,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
     console.log(`[print-jobs] SKU generated: "${sku}" for user="${ctx.user.sub}"`);
 
-    const payload = buildTsplPayload(sku, {
+    const payload = buildZplPayload(sku, {
       designNumber,
       grossWeight,
       netWeight,
