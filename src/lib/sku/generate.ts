@@ -39,14 +39,14 @@ export async function generateSku(options: GenerateSkuOptions): Promise<string> 
     await SkuSequence.findOneAndUpdate(
       { prefix: upper },
       { $setOnInsert: { seq: catalogMax } },
-      { upsert: true }
+      { upsert: true, returnDocument: "after" }
     );
   }
 
   const result = await SkuSequence.findOneAndUpdate(
     { prefix: upper },
     { $inc: { seq: 1 } },
-    { new: true }
+    { returnDocument: "after" }
   );
 
   if (!result) {
