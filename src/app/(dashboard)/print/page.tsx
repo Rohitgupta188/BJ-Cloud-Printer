@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition, useCallback, useId } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useTransition,
+  useCallback,
+  useId,
+  ChangeEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { csrfHeaders } from "@/lib/security/csrf-client";
 import { authFetch } from "@/lib/auth/auth-fetch";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,6 +32,9 @@ import {
   ChevronDown,
   ChevronUp,
   ImageOff,
+  Download,
+  FileUp,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -35,6 +43,7 @@ import Link from "next/link";
 interface RowData {
   id: string;
   prefix: string;
+  referenceSku?: string; // Previous/repeat order SKU (used for catalog auto-fill & reference)
   designNumber: string;
   grossWeight: string;
   netWeight: string;
@@ -42,6 +51,8 @@ interface RowData {
   metalType: string;
   metalPurity: string;
   collectionLine: string;
+  reserved1: string;
+  reserved3: string;
   imageUrl?: string;
   imageLoading: boolean;
   expanded: boolean;
@@ -50,6 +61,23 @@ interface RowData {
 type JobResult =
   | { status: "success"; sku: string; jobId: string; mqttStatus: string }
   | { status: "error"; sku: string; message: string };
+
+interface CatalogBatchItem {
+  sku?: string;
+  designNumber?: string;
+  prefix?: string;
+  itemType?: string;
+  grossWeight?: number;
+  netWeight?: number;
+  stoneWeight?: number;
+  metalType?: string;
+  metalPurity?: string;
+  collectionLine?: string;
+  reserved1?: string;
+  reserved3?: string;
+  imageUrl?: string;
+  source?: "catalog" | "printJob";
+}
 
 // ── SKU helpers ────────────────────────────────────────────────────────────
 
@@ -66,12 +94,58 @@ function offsetSku(baseSku: string, offset: number): string {
   return prefix + next;
 }
 
+// ── Cell extraction & normalization for Excel ──────────────────────────────
+
+function getCellString(val: unknown): string {
+  if (val == null) return "";
+  if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    if (obj.text !== undefined) return String(obj.text).trim();
+    if (obj.result !== undefined) return String(obj.result).trim();
+    if (Array.isArray(obj.richText)) {
+      return (obj.richText as Array<{ text?: string }>)
+        .map((t) => t.text || "")
+        .join("")
+        .trim();
+    }
+    return String(val).trim();
+  }
+  return String(val).trim();
+}
+
+function normalizeHeader(h: string): string {
+  return h.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function mapHeaderToKey(
+  headerStr: string
+): keyof Omit<RowData, "id" | "imageUrl" | "imageLoading" | "expanded"> | null {
+  const norm = normalizeHeader(headerStr);
+  if (["sku", "skunumber", "skuno", "barcode", "rfid", "referencesku", "prevsku"].includes(norm))
+    return "referenceSku";
+  if (["itemtype", "prefix", "type", "category"].includes(norm)) return "prefix";
+  if (["designnumber", "designno", "design", "dno"].includes(norm)) return "designNumber";
+  if (["grossweight", "grossweightg", "grosswt", "grosswtg", "gross", "gwt"].includes(norm))
+    return "grossWeight";
+  if (["netweight", "netweightg", "netwt", "netwtg", "net", "nwt"].includes(norm))
+    return "netWeight";
+  if (["stoneweight", "stoneweightg", "stonewt", "stonewtg", "stone", "swt"].includes(norm))
+    return "stoneWeight";
+  if (["metaltype", "metal"].includes(norm)) return "metalType";
+  if (["metalpurity", "purity", "kt", "karat"].includes(norm)) return "metalPurity";
+  if (["collectionline", "collection", "line"].includes(norm)) return "collectionLine";
+  if (["czreserved1", "cz", "reserved1", "czwt"].includes(norm)) return "reserved1";
+  if (["bsreserved3", "bs", "reserved3", "bswt"].includes(norm)) return "reserved3";
+  return null;
+}
+
 // ── Other helpers ──────────────────────────────────────────────────────────
 
-function makeRow(id: string): RowData {
+function makeRow(id: string, initial?: Partial<RowData>): RowData {
   return {
     id,
     prefix: "",
+    referenceSku: "",
     designNumber: "",
     grossWeight: "",
     netWeight: "",
@@ -79,15 +153,20 @@ function makeRow(id: string): RowData {
     metalType: "",
     metalPurity: "",
     collectionLine: "",
+    reserved1: "",
+    reserved3: "",
     imageUrl: undefined,
     imageLoading: false,
     expanded: true,
+    ...initial,
   };
 }
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
+
+// ── Excel Export ───────────────────────────────────────────────────────────
 
 async function downloadBatchExcel(
   entries: { row: RowData; displaySku: string; result: JobResult | null }[]
@@ -107,15 +186,18 @@ async function downloadBatchExcel(
 
   ws.columns = [
     { header: "Sr No", key: "srNo", width: 8 },
-    { header: "Design Number", key: "designNumber", width: 18 },
+    { header: "New SKU Number", key: "sku", width: 18 },
     { header: "Item Type", key: "prefix", width: 12 },
+    { header: "Design Number", key: "designNumber", width: 18 },
+    { header: "Previous/Repeat SKU", key: "referenceSku", width: 20 },
     { header: "Gross Weight", key: "grossWeight", width: 14 },
     { header: "Net Weight", key: "netWeight", width: 14 },
     { header: "Stone Weight", key: "stoneWeight", width: 14 },
     { header: "Metal Type", key: "metalType", width: 14 },
     { header: "Metal Purity", key: "metalPurity", width: 14 },
     { header: "Collection Line", key: "collectionLine", width: 18 },
-    { header: "SKU Number", key: "sku", width: 16 },
+    { header: "CZ (Reserved 1)", key: "reserved1", width: 16 },
+    { header: "BS (Reserved 3)", key: "reserved3", width: 16 },
     { header: "Job ID", key: "jobId", width: 38 },
     { header: "Status", key: "status", width: 18 },
   ];
@@ -132,19 +214,25 @@ async function downloadBatchExcel(
   entries.forEach(({ row, displaySku, result }, i) => {
     ws.addRow({
       srNo: i + 1,
-      designNumber: row.designNumber || "",
+      sku: result?.status === "success" ? result.sku : displaySku || "—",
       prefix: row.prefix,
+      designNumber: row.designNumber || "",
+      referenceSku: row.referenceSku || "—",
       grossWeight: row.grossWeight ? Number(row.grossWeight) : "",
       netWeight: row.netWeight ? Number(row.netWeight) : "",
       stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
       metalType: row.metalType || "",
       metalPurity: row.metalPurity || "",
       collectionLine: row.collectionLine || "",
-      sku: result?.status === "success" ? result.sku : displaySku || "—",
+      reserved1: row.reserved1 || "",
+      reserved3: row.reserved3 || "",
       jobId: result?.status === "success" ? result.jobId : "—",
-      status: result?.status === "success" ? result.mqttStatus
-        : result?.status === "error" ? `ERROR: ${result.message}`
-          : "PENDING",
+      status:
+        result?.status === "success"
+          ? result.mqttStatus
+          : result?.status === "error"
+            ? `ERROR: ${result.message}`
+            : "PENDING",
     });
   });
 
@@ -164,6 +252,95 @@ async function downloadBatchExcel(
   const a = document.createElement("a");
   a.href = url;
   a.download = `print-jobs-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Sample Template Download ───────────────────────────────────────────────
+
+async function downloadSampleExcelTemplate() {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "BJ Cloud Printer";
+  wb.created = new Date();
+  const ws = wb.addWorksheet("Import Template");
+
+  const headerFill = {
+    type: "pattern" as const,
+    pattern: "solid" as const,
+    fgColor: { argb: "FF1A1A2E" },
+  };
+  const headerFont = { bold: true, color: { argb: "FFFBBF24" }, size: 10 };
+
+  ws.columns = [
+    { header: "Previous SKU (Optional)", key: "referenceSku", width: 24 },
+    { header: "Item Type", key: "prefix", width: 14 },
+    { header: "Design Number", key: "designNumber", width: 18 },
+    { header: "Gross Weight", key: "grossWeight", width: 14 },
+    { header: "Net Weight", key: "netWeight", width: 14 },
+    { header: "Stone Weight", key: "stoneWeight", width: 14 },
+    { header: "Metal Type", key: "metalType", width: 14 },
+    { header: "Metal Purity", key: "metalPurity", width: 14 },
+    { header: "Collection Line", key: "collectionLine", width: 18 },
+    { header: "CZ (Reserved 1)", key: "reserved1", width: 16 },
+    { header: "BS (Reserved 3)", key: "reserved3", width: 16 },
+  ];
+
+  const headerRow = ws.getRow(1);
+  headerRow.eachCell((cell) => {
+    cell.fill = headerFill;
+    cell.font = headerFont;
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+    cell.border = { bottom: { style: "thin", color: { argb: "FFFBBF24" } } };
+  });
+  headerRow.height = 24;
+
+  // Sample row 1: Repeat order example (uses previous SKU to auto-fill details, brand new SKU generated on print)
+  ws.addRow({
+    referenceSku: "TRTP5614",
+    prefix: "TRTP",
+    designNumber: "DZGR35196",
+    grossWeight: 12.45,
+    netWeight: 11.2,
+    stoneWeight: 1.25,
+    metalType: "Gold",
+    metalPurity: "22K",
+    collectionLine: "Bridal",
+    reserved1: "10",
+    reserved3: "2",
+  });
+
+  // Sample row 2: New order example
+  ws.addRow({
+    referenceSku: "",
+    prefix: "RING",
+    designNumber: "DZRN1002",
+    grossWeight: 8.5,
+    netWeight: 8.1,
+    stoneWeight: 0.4,
+    metalType: "Gold",
+    metalPurity: "18K",
+    collectionLine: "Classic",
+    reserved1: "4",
+    reserved3: "0",
+  });
+
+  ws.eachRow((r, ri) => {
+    if (ri === 1) return;
+    r.height = 20;
+    r.eachCell((cell) => {
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    });
+  });
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `bj-print-import-template.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -241,21 +418,28 @@ function JobRow({
   const fetchImage = useCallback(
     async (dn: string) => {
       const trimmed = dn.trim();
-      if (!trimmed) { onChange({ imageUrl: undefined }); return; }
+      if (!trimmed) {
+        onChange({ imageUrl: undefined });
+        return;
+      }
       onChange({ imageLoading: true });
       try {
-        const res = await fetch(`/api/catalog/design/${encodeURIComponent(trimmed)}`);
+        const res = await fetch(
+          `/api/catalog/design/${encodeURIComponent(trimmed)}`
+        );
         const data = await res.json();
         if (res.ok && data.data) {
           const item = data.data;
           onChange({
             imageUrl: item.imageUrl,
-            grossWeight: row.grossWeight || String(item.grossWeight ?? ""),
-            netWeight: row.netWeight || String(item.netWeight ?? ""),
-            stoneWeight: row.stoneWeight || String(item.stoneWeight ?? ""),
-            metalType: row.metalType || item.metalType || "",
-            metalPurity: row.metalPurity || item.metalPurity || "",
-            collectionLine: row.collectionLine || item.collectionLine || "",
+            grossWeight: String(item.grossWeight ?? ""),
+            netWeight: String(item.netWeight ?? ""),
+            stoneWeight: String(item.stoneWeight ?? ""),
+            metalType: item.metalType ?? "",
+            metalPurity: item.metalPurity ?? "",
+            collectionLine: item.collectionLine ?? "",
+            reserved1: String(item.reserved1 ?? ""),
+            reserved3: String(item.reserved3 ?? ""),
           });
         } else {
           onChange({ imageUrl: undefined });
@@ -266,7 +450,7 @@ function JobRow({
         onChange({ imageLoading: false });
       }
     },
-    [onChange, row]
+    [onChange]
   );
 
   function handleDesignChange(val: string) {
@@ -276,7 +460,9 @@ function JobRow({
   }
 
   useEffect(
-    () => () => { if (designTimer.current) clearTimeout(designTimer.current); },
+    () => () => {
+      if (designTimer.current) clearTimeout(designTimer.current);
+    },
     []
   );
 
@@ -285,12 +471,13 @@ function JobRow({
 
   return (
     <Card
-      className={`border-border/40 overflow-hidden transition-all ${result?.status === "success"
+      className={`border-border/40 overflow-hidden transition-all ${
+        result?.status === "success"
           ? "border-emerald-500/30"
           : result?.status === "error"
             ? "border-destructive/30"
             : ""
-        }`}
+      }`}
     >
       {/* ── Row header ── */}
       <div
@@ -301,16 +488,24 @@ function JobRow({
           {index + 1}
         </div>
 
-        <div className="flex flex-1 items-center gap-2 min-w-0">
+        <div className="flex flex-1 items-center gap-2 min-w-0 flex-wrap">
           {row.prefix && (
             <span className="font-mono text-xs font-semibold text-foreground">
               {row.prefix}
             </span>
           )}
           {displaySku && (
-            <span className="font-mono text-xs text-primary">
+            <span className="font-mono text-xs font-medium text-primary">
               → {displaySku}
             </span>
+          )}
+          {row.referenceSku && (
+            <Badge
+              variant="outline"
+              className="text-[10px] py-0 px-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
+            >
+              Repeat of {row.referenceSku}
+            </Badge>
           )}
           {skuLoading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -330,16 +525,21 @@ function JobRow({
             variant="ghost"
             size="icon"
             className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
             disabled={isSubmitting}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </Button>
         )}
 
-        {row.expanded
-          ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+        {row.expanded ? (
+          <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        )}
       </div>
 
       {/* ── Row body ── */}
@@ -347,11 +547,10 @@ function JobRow({
         <CardContent className="pt-4 pb-5">
           {/* Two-column: form (left) + image (right) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
             {/* ── Left: form fields (2/3 width) ── */}
             <div className="lg:col-span-2 space-y-4">
-              {/* Row 1: Item type + Design number */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row 1: Item type + Previous SKU + Design number */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field label="Item Type *" id={id("prefix")}>
                   <Input
                     id={id("prefix")}
@@ -364,6 +563,23 @@ function JobRow({
                     placeholder="e.g. TRTP, RING"
                     className="h-10 font-mono uppercase tracking-widest"
                     maxLength={20}
+                    disabled={done || isSubmitting}
+                  />
+                </Field>
+
+                <Field label="Previous SKU (Optional)" id={id("refSku")}>
+                  <Input
+                    id={id("refSku")}
+                    value={row.referenceSku ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value.toUpperCase().trim();
+                      onChange({
+                        referenceSku: val,
+                        prefix: row.prefix || (val ? val.replace(/\d+$/, "") : ""),
+                      });
+                    }}
+                    placeholder="e.g. TRTP5614"
+                    className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -451,7 +667,7 @@ function JobRow({
                     id={id("purity")}
                     value={row.metalPurity}
                     onChange={(e) => onChange({ metalPurity: e.target.value })}
-                    placeholder="22, 18K…"
+                    placeholder="22K, 18K…"
                     className="h-10"
                     disabled={done || isSubmitting}
                   />
@@ -462,6 +678,30 @@ function JobRow({
                     value={row.collectionLine}
                     onChange={(e) => onChange({ collectionLine: e.target.value })}
                     placeholder="Bridal, Classic…"
+                    className="h-10"
+                    disabled={done || isSubmitting}
+                  />
+                </Field>
+              </div>
+
+              {/* Row 5: CZ (reserved1) + BS (reserved3) */}
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="CZ (Reserved 1)" id={id("reserved1")}>
+                  <Input
+                    id={id("reserved1")}
+                    value={row.reserved1}
+                    onChange={(e) => onChange({ reserved1: e.target.value })}
+                    placeholder="e.g. 12"
+                    className="h-10"
+                    disabled={done || isSubmitting}
+                  />
+                </Field>
+                <Field label="BS (Reserved 3)" id={id("reserved3")}>
+                  <Input
+                    id={id("reserved3")}
+                    value={row.reserved3}
+                    onChange={(e) => onChange({ reserved3: e.target.value })}
+                    placeholder="e.g. 5"
                     className="h-10"
                     disabled={done || isSubmitting}
                   />
@@ -492,19 +732,23 @@ function JobRow({
 
             {/* ── Right: image panel (1/3 width) ── */}
             <div className="lg:col-span-1 flex flex-col gap-3">
-              {/* SKU preview box */}
+              {/* SKU preview box — Always shows the newly assigned sequence SKU */}
               {(displaySku || skuLoading) && (
-                <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-center">
-                  <p className="text-[10px] text-muted-foreground mb-1">Next SKU</p>
+                <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-center transition-all">
+                  <p className="text-[10px] text-muted-foreground mb-1">
+                    New SKU to Assign
+                  </p>
                   {skuLoading ? (
                     <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" />
                   ) : (
-                    <p className="font-mono text-xl font-bold text-primary tracking-wider">
+                    <p className="font-mono text-xl font-bold tracking-wider text-primary">
                       {displaySku}
                     </p>
                   )}
                   <p className="text-[9px] text-muted-foreground/60 mt-1">
-                    Assigned on submit
+                    {row.referenceSku
+                      ? `New SKU for repeat order (${row.referenceSku})`
+                      : "Assigned sequentially on submit"}
                   </p>
                 </div>
               )}
@@ -517,20 +761,20 @@ function JobRow({
                   <>
                     <img
                       src={row.imageUrl}
-                      alt={row.designNumber}
+                      alt={row.designNumber || row.referenceSku || "Product Image"}
                       className="max-h-56 max-w-full rounded-lg object-contain shadow-lg ring-1 ring-border/20"
                     />
                     <span className="mt-2 text-[10px] font-mono text-muted-foreground">
-                      {row.designNumber}
+                      {row.designNumber || row.referenceSku}
                     </span>
                   </>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-center">
                     <ImageOff className="h-8 w-8 text-muted-foreground/30" />
                     <p className="text-xs text-muted-foreground/60">
-                      {row.designNumber
-                        ? "Design not found"
-                        : "Enter design number to see image"}
+                      {row.designNumber || row.referenceSku
+                        ? "Design image not found"
+                        : "Enter design number or previous SKU to view image"}
                     </p>
                   </div>
                 )}
@@ -552,6 +796,10 @@ export default function NewPrintJobPage() {
   const [rows, setRows] = useState<RowData[]>(() => [makeRow(uid())]);
   const [results, setResults] = useState<Map<string, JobResult>>(new Map());
   const [submitted, setSubmitted] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   /**
    * Prefix cache: maps prefix → first fetched base SKU.
@@ -578,14 +826,18 @@ export default function NewPrintJobPage() {
         if (res.ok && data.data?.sku) {
           setSkuCache((prev) => ({ ...prev, [up]: data.data.sku }));
         }
-      } catch { /* silent */ }
-      finally {
+      } catch {
+        /* silent */
+      } finally {
         setSkuLoading((prev) => ({ ...prev, [up]: false }));
       }
     }, 600);
   }
 
-  /** Compute the display SKU for a row, accounting for same-prefix siblings above it. */
+  /**
+   * Compute the preview SKU for a row.
+   * Every printed row ALWAYS receives a newly generated sequential SKU.
+   */
   function computeDisplaySku(rowIndex: number): string {
     const row = rows[rowIndex];
     const up = row.prefix.trim().toUpperCase();
@@ -609,8 +861,6 @@ export default function NewPrintJobPage() {
   function handlePrefixChange(id: string, value: string) {
     const up = value.toUpperCase();
     patchRow(id, { prefix: up });
-    // Invalidate cache for this prefix so new prefix is fetched fresh
-    // (but only for the new prefix — siblings are unchanged)
     if (up) schedulePrefixFetch(up);
   }
 
@@ -623,6 +873,202 @@ export default function NewPrintJobPage() {
       if (prev.length === 1) return prev;
       return prev.filter((r) => r.id !== id);
     });
+  }
+
+  function toggleAllExpanded() {
+    const allExpanded = rows.every((r) => r.expanded);
+    setRows((prev) => prev.map((r) => ({ ...r, expanded: !allExpanded })));
+  }
+
+  // ── Excel Import Handler ─────────────────────────────────────────────────
+
+  async function handleExcelUpload(file: File) {
+    if (!file.name.match(/\.(xlsx|xls)$/i)) {
+      toast.error("Please upload a valid Excel (.xlsx or .xls) file.");
+      return;
+    }
+
+    setIsImporting(true);
+    const toastId = toast.loading("Reading Excel file…");
+
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const arrayBuffer = await file.arrayBuffer();
+      await wb.xlsx.load(arrayBuffer);
+
+      const ws = wb.worksheets[0];
+      if (!ws) {
+        throw new Error("No worksheet found in Excel file.");
+      }
+
+      // 1. Locate header row and map column indices
+      let headerRowNumber = 1;
+      const colMap: Record<
+        number,
+        keyof Omit<RowData, "id" | "imageUrl" | "imageLoading" | "expanded">
+      > = {};
+
+      ws.eachRow((row, rowNumber) => {
+        if (Object.keys(colMap).length > 0) return; // already found
+        row.eachCell((cell, colNumber) => {
+          const str = getCellString(cell.value);
+          const mappedKey = mapHeaderToKey(str);
+          if (mappedKey) {
+            colMap[colNumber] = mappedKey;
+          }
+        });
+        if (Object.keys(colMap).length > 0) {
+          headerRowNumber = rowNumber;
+        }
+      });
+
+      if (Object.keys(colMap).length === 0) {
+        throw new Error(
+          "Could not detect recognizable headers (e.g. SKU, Item Type, Design Number, Gross Weight)."
+        );
+      }
+
+      // 2. Read data rows
+      const parsedRows: RowData[] = [];
+
+      ws.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRowNumber) return;
+
+        const rowValues: Partial<RowData> = {};
+        let hasAnyData = false;
+
+        row.eachCell((cell, colNumber) => {
+          const key = colMap[colNumber];
+          if (!key) return;
+          const val = getCellString(cell.value);
+          if (val) {
+            hasAnyData = true;
+            (rowValues as Record<string, string>)[key] = val;
+          }
+        });
+
+        if (!hasAnyData) return;
+
+        const rawRefSku = (rowValues.referenceSku || "").toUpperCase().trim();
+        const rawPrefix = (rowValues.prefix || "").toUpperCase().trim();
+        const effectivePrefix =
+          rawPrefix || (rawRefSku ? rawRefSku.replace(/\d+$/, "").toUpperCase() : "");
+
+        parsedRows.push(
+          makeRow(uid(), {
+            referenceSku: rawRefSku,
+            prefix: effectivePrefix,
+            designNumber: (rowValues.designNumber || "").trim(),
+            grossWeight: (rowValues.grossWeight || "").trim(),
+            netWeight: (rowValues.netWeight || "").trim(),
+            stoneWeight: (rowValues.stoneWeight || "").trim(),
+            metalType: (rowValues.metalType || "").trim(),
+            metalPurity: (rowValues.metalPurity || "").trim(),
+            collectionLine: (rowValues.collectionLine || "").trim(),
+            reserved1: (rowValues.reserved1 || "").trim(),
+            reserved3: (rowValues.reserved3 || "").trim(),
+            expanded: ws.actualRowCount <= 5,
+          })
+        );
+      });
+
+      if (parsedRows.length === 0) {
+        throw new Error("No data rows found below the header row.");
+      }
+
+      // Schedule prefix fetches so new sequential SKUs can be computed
+      const uniquePrefixes = Array.from(
+        new Set(parsedRows.map((r) => r.prefix).filter((p) => !!p))
+      );
+      uniquePrefixes.forEach((p) => schedulePrefixFetch(p));
+
+      setRows(parsedRows);
+      setResults(new Map());
+      setSubmitted(false);
+
+      toast.loading(`Imported ${parsedRows.length} items. Auto-filling details…`, {
+        id: toastId,
+      });
+
+      // 3. Batch Catalog Lookup to auto-fill images, weights, and details
+      const queries = parsedRows
+        .filter((r) => r.referenceSku || r.designNumber)
+        .map((r) => ({
+          sku: r.referenceSku || undefined,
+          designNumber: r.designNumber || undefined,
+        }));
+
+      if (queries.length > 0) {
+        try {
+          const res = await authFetch("/api/catalog/lookup-batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...csrfHeaders() },
+            body: JSON.stringify({ queries }),
+          });
+
+          const data = await res.json();
+          if (res.ok && data.data?.results) {
+            const resultsMap = data.data.results as Record<string, CatalogBatchItem>;
+
+            setRows((current) =>
+              current.map((r) => {
+                const match =
+                  (r.referenceSku
+                    ? resultsMap[`sku:${r.referenceSku.toUpperCase()}`]
+                    : null) ||
+                  (r.designNumber
+                    ? resultsMap[`dn:${r.designNumber.toUpperCase()}`]
+                    : null);
+
+                if (!match) return r;
+
+                return {
+                  ...r,
+                  imageUrl: r.imageUrl || match.imageUrl,
+                  prefix: r.prefix || match.prefix || match.itemType || "",
+                  designNumber: r.designNumber || match.designNumber || "",
+                  grossWeight:
+                    r.grossWeight ||
+                    (match.grossWeight != null ? String(match.grossWeight) : ""),
+                  netWeight:
+                    r.netWeight ||
+                    (match.netWeight != null ? String(match.netWeight) : ""),
+                  stoneWeight:
+                    r.stoneWeight ||
+                    (match.stoneWeight != null ? String(match.stoneWeight) : ""),
+                  metalType: r.metalType || match.metalType || "",
+                  metalPurity: r.metalPurity || match.metalPurity || "",
+                  collectionLine: r.collectionLine || match.collectionLine || "",
+                  reserved1: r.reserved1 || match.reserved1 || "",
+                  reserved3: r.reserved3 || match.reserved3 || "",
+                };
+              })
+            );
+          }
+        } catch {
+          /* ignore lookup errors */
+        }
+      }
+
+      toast.success(
+        `Successfully loaded ${parsedRows.length} item${
+          parsedRows.length > 1 ? "s" : ""
+        } from Excel. New sequential SKUs will be assigned on print.`,
+        { id: toastId }
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to parse Excel file";
+      toast.error(msg, { id: toastId });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function onFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) handleExcelUpload(file);
   }
 
   // ── Validation ───────────────────────────────────────────────────────────
@@ -644,7 +1090,10 @@ export default function NewPrintJobPage() {
 
   function handleSubmit() {
     const err = validateAll();
-    if (err) { toast.error(err); return; }
+    if (err) {
+      toast.error(err);
+      return;
+    }
 
     startTransition(async () => {
       setSubmitted(true);
@@ -656,7 +1105,7 @@ export default function NewPrintJobPage() {
             method: "POST",
             headers: { "Content-Type": "application/json", ...csrfHeaders() },
             body: JSON.stringify({
-              prefix: row.prefix,
+              prefix: row.prefix.trim().toUpperCase(),
               designNumber: row.designNumber || undefined,
               grossWeight: row.grossWeight ? Number(row.grossWeight) : undefined,
               netWeight: row.netWeight ? Number(row.netWeight) : undefined,
@@ -665,6 +1114,8 @@ export default function NewPrintJobPage() {
               metalPurity: row.metalPurity || undefined,
               collectionLine: row.collectionLine || undefined,
               imageUrl: row.imageUrl || undefined,
+              reserved1: row.reserved1 || undefined,
+              reserved3: row.reserved3 || undefined,
             }),
           });
           const data = await res.json();
@@ -683,7 +1134,10 @@ export default function NewPrintJobPage() {
               mqttStatus: job.status,
             });
             // Update cache so next batch row preview reflects the newly committed SKU
-            setSkuCache((prev) => ({ ...prev, [row.prefix.toUpperCase()]: job.sku }));
+            setSkuCache((prev) => ({
+              ...prev,
+              [row.prefix.toUpperCase()]: job.sku,
+            }));
           }
         } catch {
           newResults.set(row.id, {
@@ -695,15 +1149,18 @@ export default function NewPrintJobPage() {
         setResults(new Map(newResults));
       }
 
-      const ok = [...newResults.values()].filter((r) => r.status === "success").length;
+      const ok = [...newResults.values()].filter(
+        (r) => r.status === "success"
+      ).length;
       const fail = rows.length - ok;
-      if (fail === 0) toast.success(`${ok} job${ok > 1 ? "s" : ""} created successfully.`);
+      if (fail === 0)
+        toast.success(`${ok} job${ok > 1 ? "s" : ""} created with new unique SKUs.`);
       else if (ok === 0) toast.error(`All ${fail} jobs failed.`);
       else toast.warning(`${ok} succeeded, ${fail} failed.`);
     });
   }
 
-  // ── Excel ────────────────────────────────────────────────────────────────
+  // ── Excel Export ─────────────────────────────────────────────────────────
 
   async function handleExcel() {
     const entries = rows.map((row, i) => ({
@@ -731,8 +1188,12 @@ export default function NewPrintJobPage() {
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const allDone = submitted && results.size === rows.length;
-  const successCount = [...results.values()].filter((r) => r.status === "success").length;
-  const failCount = [...results.values()].filter((r) => r.status === "error").length;
+  const successCount = [...results.values()].filter(
+    (r) => r.status === "success"
+  ).length;
+  const failCount = [...results.values()].filter(
+    (r) => r.status === "error"
+  ).length;
   const hasAnyPrefix = rows.some((r) => r.prefix.trim().length > 0);
 
   return (
@@ -752,34 +1213,162 @@ export default function NewPrintJobPage() {
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold tracking-tight">New Print Job</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Add multiple items and submit as a batch to the TSC TTP-244 Pro
+            Print single items, repeat orders, or upload an Excel sheet — a new sequential SKU is assigned to every label
           </p>
         </div>
 
-        {allDone && (
+        <div className="flex items-center gap-2">
+          {/* Hidden File Input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={onFileChange}
+            accept=".xlsx,.xls"
+            className="hidden"
+          />
+
           <Button
+            type="button"
             variant="outline"
             size="sm"
-            onClick={handleReset}
-            className="shrink-0"
+            className="gap-1.5 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isPending || isImporting}
           >
-            New Batch
+            {isImporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileUp className="h-3.5 w-3.5" />
+            )}
+            Import Excel
           </Button>
-        )}
+
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            onClick={downloadSampleExcelTemplate}
+            title="Download sample Excel template"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Template
+          </Button>
+
+          {rows.length > 1 && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              onClick={toggleAllExpanded}
+            >
+              {rows.every((r) => r.expanded) ? (
+                <>
+                  <ChevronUp className="h-3.5 w-3.5" />
+                  Collapse All
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3.5 w-3.5" />
+                  Expand All
+                </>
+              )}
+            </Button>
+          )}
+
+          {allDone && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReset}
+              className="shrink-0"
+            >
+              New Batch
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="max-w-6xl space-y-4 px-8 py-8">
+        {/* ── Quick Import Banner & Drag-and-drop zone ── */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            const file = e.dataTransfer.files?.[0];
+            if (file) handleExcelUpload(file);
+          }}
+          className={`relative rounded-xl border border-dashed transition-all p-4 ${
+            isDragging
+              ? "border-emerald-500 bg-emerald-500/10 scale-[1.005]"
+              : "border-border/60 bg-muted/10 hover:bg-muted/20"
+          }`}
+        >
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                <FileSpreadsheet className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  Import Excel for Repeat Orders & Batch Printing
+                  <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Upload an Excel (.xlsx) file containing past SKUs or design numbers. Product details & images auto-fill, and new unique SKUs are generated for printing.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isPending || isImporting}
+              >
+                {isImporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileUp className="h-3.5 w-3.5" />
+                )}
+                Upload Sheet
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-xs text-muted-foreground"
+                onClick={downloadSampleExcelTemplate}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Sample Template
+              </Button>
+            </div>
+          </div>
+        </div>
 
         {/* ── Progress bar ── */}
         {(isPending || allDone) && (
           <div className="flex items-center gap-4 rounded-xl border border-border/40 bg-muted/20 px-5 py-3">
-            {isPending
-              ? <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
-              : <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />}
+            {isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+            )}
             <p className="flex-1 text-sm font-medium">
               {isPending
                 ? `Submitting… ${results.size} / ${rows.length}`
-                : `Done — ${successCount} of ${rows.length} job${rows.length > 1 ? "s" : ""} created`}
+                : `Done — ${successCount} of ${rows.length} job${
+                    rows.length > 1 ? "s" : ""
+                  } created`}
             </p>
             {successCount > 0 && (
               <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
@@ -806,10 +1395,8 @@ export default function NewPrintJobPage() {
               result={results.get(row.id) ?? null}
               isSubmitting={isPending}
               onChange={(patch) => {
-                // If prefix changed, trigger a fetch for the new prefix
                 if (patch.prefix !== undefined && patch.prefix !== row.prefix) {
                   handlePrefixChange(row.id, patch.prefix);
-                  // Merge patch without prefix (already handled)
                   const { prefix: _, ...rest } = patch;
                   if (Object.keys(rest).length > 0) patchRow(row.id, rest);
                 } else {
@@ -842,7 +1429,7 @@ export default function NewPrintJobPage() {
             <Button
               type="button"
               variant="outline"
-              className="gap-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+              className="gap-2 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
               onClick={handleExcel}
               disabled={isPending}
             >
