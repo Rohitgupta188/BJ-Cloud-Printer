@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { Printer, LayoutDashboard, Plus, LogOut } from "lucide-react";
 import { csrfHeaders } from "@/lib/security/csrf-client";
 
@@ -71,8 +72,17 @@ function Sidebar() {
 
       <Separator className="opacity-40" />
 
-      {/* Sign out */}
-      <div className="p-3">
+      {/* Theme & Sign out */}
+      <div className="p-3 space-y-1">
+        {/* Theme toggle */}
+        <div className="flex items-center justify-between px-1 py-1.5">
+          <span className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground/60">
+            Theme
+          </span>
+          <ThemeToggle />
+        </div>
+
+        {/* Sign out */}
         <Button
           id="sidebar-logout-btn"
           variant="ghost"
@@ -93,7 +103,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background">
       <Sidebar />
       <main className="flex flex-1 flex-col overflow-hidden">{children}</main>
     </div>
