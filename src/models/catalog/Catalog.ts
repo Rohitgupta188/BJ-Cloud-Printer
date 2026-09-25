@@ -28,6 +28,9 @@ export interface ICatalog {
   metalType: string;
   metalPurity: string;
 
+  reserved1?: string;
+  reserved3?: string;
+
   createdAt: Date;
   updatedAt: Date;
 }
