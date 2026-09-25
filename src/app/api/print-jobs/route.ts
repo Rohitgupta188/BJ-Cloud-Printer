@@ -1,4 +1,7 @@
-import { NextRequest } from "next/server";
+import { NextRequest, after } from "next/server";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 import { z } from "zod";
 import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
@@ -8,6 +11,7 @@ import { rateLimit, validateCsrf, auditLog } from "@/lib/security";
 import { requireClientIp } from "@/lib/security";
 import type { PrintJobStatus } from "@/models/printer/PrintJob";
 import { publishPrintJob } from "@/lib/mqtt/publisher";
+import { uploadPrintJobsToExcel } from "@/lib/drive/excel-upload";
 import {
   success,
   created,
@@ -33,6 +37,7 @@ const StatusQuerySchema = z.enum(VALID_STATUSES);
 const CreatePrintJobSchema = z.object({
   prefix: z
     .string()
+    .trim()
     .min(1, "Item type is required")
     .max(20, "Item type must be ≤ 20 characters")
     .regex(/^[A-Z0-9]+$/i, "Item type must be alphanumeric only"),
@@ -45,6 +50,8 @@ const CreatePrintJobSchema = z.object({
   metalPurity:    z.string().trim().optional(),
   collectionLine: z.string().trim().optional(),
   imageUrl:       z.string().trim().optional(),
+  reserved1:      z.string().trim().optional(),
+  reserved3:      z.string().trim().optional(),
 });
 
 function buildZplPayload(sku: string, data: {
@@ -54,6 +61,8 @@ function buildZplPayload(sku: string, data: {
   stoneWeight?: number;
   metalType?: string;
   metalPurity?: string;
+  reserved1?: string;
+  reserved3?: string;
 }): string {
   // Helper: format value with optional suffix, or empty string if absent
   const f = (v: string | number | undefined, suffix = "") =>
@@ -71,7 +80,9 @@ function buildZplPayload(sku: string, data: {
     // --- Right column: design/weight labels (mirrored from TSPL coords) ---
     `^FO380,105^A0,25,25^FDD.No: ${f(data.designNumber)}^FS`,
     `^FO380,85^A0,25,25^FDG.Wt: ${f(data.grossWeight, "g")}^FS`,
+    `^FO300,85^A0,25,25^FDCZ: ${f(data.reserved1)}^FS`,
     `^FO380,65^A0,25,25^FDS Wt: ${f(data.stoneWeight, "g")}^FS`,
+    `^FO300,65^A0,25,25^FDBS: ${f(data.reserved3)}^FS`,
     `^FO380,45^A0,25,25^FDN Wt: ${f(data.netWeight, "g")}^FS`,
     `^FO300,45^A0,25,25^FDKT: ${f(data.metalPurity)}^FS`,
 
@@ -181,6 +192,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     metalPurity,
     collectionLine,
     imageUrl,
+    reserved1,
+    reserved3,
   } = parsedBody.data;
 
   const printerId = process.env.MQTT_PRINTER_ID ?? "mumbai-01";
@@ -192,13 +205,13 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       connectToPrinterDb(),
     ]);
 
+    // Always generate a brand new unique SKU for every print job (new or repeat)
     const sku = await generateSku({
       catalogConn: catalogConn.connection,
       printerConn: printerConn.connection,
       prefix: prefix.toUpperCase(),
     });
-
-    console.log(`[print-jobs] SKU generated: "${sku}" for user="${ctx.user.sub}"`);
+    console.log(`[print-jobs] New SKU generated: "${sku}" for user="${ctx.user.sub}"`);
 
     const payload = buildZplPayload(sku, {
       designNumber,
@@ -207,6 +220,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       stoneWeight,
       metalType,
       metalPurity,
+      reserved1,
+      reserved3,
     });
 
     const jobId = crypto.randomUUID();
@@ -229,6 +244,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       metalPurity,
       collectionLine,
       imageUrl,
+      reserved1,
+      reserved3,
     });
 
     console.log(`[print-jobs] Job saved: jobId="${jobId}" sku="${sku}" status="PENDING"`);
@@ -251,6 +268,33 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
       finalStatus = "MQTT_PUBLISHED";
       console.log(`[print-jobs] MQTT_PUBLISHED jobId="${jobId}" sku="${sku}"`);
+
+      // ── Drive Excel upload (Vercel Serverless background task) ────────────
+      // Using after() guarantees Vercel keeps the function alive until the Drive
+      // upload finishes, while returning the print response to the user instantly.
+      after(async () => {
+        try {
+          await uploadPrintJobsToExcel([{
+            sku,
+            rfid: sku,
+            designNumber,
+            metalType,
+            metalPurity,
+            grossWeight,
+            netWeight,
+            stoneWeight,
+            collectionLine,
+            reserved1,
+            reserved3,
+            printerId,
+            status:    "MQTT_PUBLISHED",
+            createdAt: new Date(),
+            createdBy: ctx.user.sub,
+          }]);
+        } catch (driveErr) {
+          console.error(`[print-jobs] Drive upload failed for jobId="${jobId}":`, driveErr);
+        }
+      });
 
     } catch (mqttErr) {
       const errMsg = mqttErr instanceof Error ? mqttErr.message : String(mqttErr);
@@ -279,6 +323,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
         metalType:     job.metalType,
         metalPurity:   job.metalPurity,
         collectionLine:job.collectionLine,
+        reserved1:     job.reserved1,
+        reserved3:     job.reserved3,
       },
     });
   } catch (err) {
