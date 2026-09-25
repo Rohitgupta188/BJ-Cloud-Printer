@@ -34,6 +34,8 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
         metalPurity: 1,
         collectionLine: 1,
         itemStatus: 1,
+        reserved1: 1,
+        reserved3: 1,
         _id: 0,
       }
     ).lean();
