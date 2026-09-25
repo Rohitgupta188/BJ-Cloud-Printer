@@ -101,6 +101,14 @@ const PrintJobSchema = new Schema(
       type: String,
       trim: true
     },
+    reserved1: {
+      type: String,
+      trim: true
+    },
+    reserved3: {
+      type: String,
+      trim: true
+    },
   },
   {
     timestamps: true,
