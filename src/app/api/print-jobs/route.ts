@@ -223,12 +223,41 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     const effectiveCzWeight = czWeight ?? reserved1;
     const effectiveBsWeight = bsWeight ?? reserved3;
 
+    const czNum =
+      effectiveCzWeight !== undefined && !isNaN(Number(effectiveCzWeight))
+        ? Number(effectiveCzWeight)
+        : 0;
+    const bsNum =
+      effectiveBsWeight !== undefined && !isNaN(Number(effectiveBsWeight))
+        ? Number(effectiveBsWeight)
+        : 0;
+    const hasCz =
+      effectiveCzWeight !== undefined && !isNaN(Number(effectiveCzWeight));
+    const hasBs =
+      effectiveBsWeight !== undefined && !isNaN(Number(effectiveBsWeight));
+
+    const effectiveStoneWeight =
+      stoneWeight !== undefined
+        ? stoneWeight
+        : hasCz || hasBs
+          ? Math.round((czNum + bsNum) * 1000) / 1000
+          : undefined;
+
+    const effectiveNetWeight =
+      netWeight !== undefined
+        ? netWeight
+        : grossWeight !== undefined
+          ? effectiveStoneWeight !== undefined
+            ? Math.round((grossWeight - Number(effectiveStoneWeight)) * 1000) / 1000
+            : grossWeight
+          : undefined;
+
     const payload = generateTsplPayload({
       skuNumber: sku,
       designNumber,
       grossWeight,
-      netWeight,
-      stoneWeight,
+      netWeight: effectiveNetWeight,
+      stoneWeight: effectiveStoneWeight,
       metalPurity,
       metalType,
       czWeight: effectiveCzWeight,
@@ -249,8 +278,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       retryCount: 0,
       designNumber,
       grossWeight,
-      netWeight,
-      stoneWeight,
+      netWeight: effectiveNetWeight,
+      stoneWeight: effectiveStoneWeight,
       metalType,
       metalPurity,
       collectionLine,
@@ -292,8 +321,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
             metalType,
             metalPurity,
             grossWeight,
-            netWeight,
-            stoneWeight,
+            netWeight: effectiveNetWeight,
+            stoneWeight: effectiveStoneWeight,
             collectionLine,
             reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
             reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
