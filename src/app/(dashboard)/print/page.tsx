@@ -162,6 +162,89 @@ function makeRow(id: string, initial?: Partial<RowData>): RowData {
   };
 }
 
+function roundWeight(num: number): string {
+  if (isNaN(num) || !isFinite(num)) return "";
+  return parseFloat(num.toFixed(3)).toString();
+}
+
+function computeWeights(
+  row: RowData,
+  field: "grossWeight" | "stoneWeight" | "reserved1" | "reserved3",
+  val: string
+): Partial<RowData> {
+  if (field === "grossWeight") {
+    const patch: Partial<RowData> = { grossWeight: val };
+    const grossNum = parseFloat(val);
+    if (!isNaN(grossNum)) {
+      const stoneNum = parseFloat(row.stoneWeight);
+      if (!isNaN(stoneNum)) {
+        patch.netWeight = roundWeight(grossNum - stoneNum);
+      } else {
+        const r1Num = parseFloat(row.reserved1);
+        const r3Num = parseFloat(row.reserved3);
+        const cz = !isNaN(r1Num) ? r1Num : 0;
+        const bs = !isNaN(r3Num) ? r3Num : 0;
+        if (!isNaN(r1Num) || !isNaN(r3Num)) {
+          patch.netWeight = roundWeight(grossNum - (cz + bs));
+        } else {
+          // If no stone weight entered yet, Net Weight matches Gross Weight
+          patch.netWeight = val;
+        }
+      }
+    } else if (val.trim() === "") {
+      patch.netWeight = "";
+    }
+    return patch;
+  }
+
+  if (field === "stoneWeight") {
+    const patch: Partial<RowData> = { stoneWeight: val };
+    const stoneNum = parseFloat(val);
+    const grossNum = parseFloat(row.grossWeight);
+    if (!isNaN(grossNum)) {
+      if (!isNaN(stoneNum)) {
+        patch.netWeight = roundWeight(grossNum - stoneNum);
+      } else if (val.trim() === "") {
+        patch.netWeight = row.grossWeight;
+      }
+    }
+    return patch;
+  }
+
+  if (field === "reserved1" || field === "reserved3") {
+    const newR1 = field === "reserved1" ? val : row.reserved1;
+    const newR3 = field === "reserved3" ? val : row.reserved3;
+    const patch: Partial<RowData> = { [field]: val };
+
+    const r1Num = parseFloat(newR1);
+    const r3Num = parseFloat(newR3);
+    const hasR1 = !isNaN(r1Num);
+    const hasR3 = !isNaN(r3Num);
+
+    if (hasR1 || hasR3) {
+      const cz = hasR1 ? r1Num : 0;
+      const bs = hasR3 ? r3Num : 0;
+      const stone = cz + bs;
+      const stoneStr = roundWeight(stone);
+      patch.stoneWeight = stoneStr;
+
+      const grossNum = parseFloat(row.grossWeight);
+      if (!isNaN(grossNum)) {
+        patch.netWeight = roundWeight(grossNum - stone);
+      }
+    } else if (newR1.trim() === "" && newR3.trim() === "") {
+      patch.stoneWeight = "";
+      const grossNum = parseFloat(row.grossWeight);
+      if (!isNaN(grossNum)) {
+        patch.netWeight = row.grossWeight;
+      }
+    }
+    return patch;
+  }
+
+  return { [field]: val };
+}
+
 function uid() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -430,16 +513,35 @@ function JobRow({
         const data = await res.json();
         if (res.ok && data.data) {
           const item = data.data;
+          const r1 = item.reserved1 != null ? String(item.reserved1) : "";
+          const r3 = item.reserved3 != null ? String(item.reserved3) : "";
+          const gWt = item.grossWeight != null ? String(item.grossWeight) : "";
+          let sWt = item.stoneWeight != null ? String(item.stoneWeight) : "";
+          let nWt = item.netWeight != null ? String(item.netWeight) : "";
+
+          const r1Num = parseFloat(r1);
+          const r3Num = parseFloat(r3);
+          const hasR1 = !isNaN(r1Num);
+          const hasR3 = !isNaN(r3Num);
+          if ((!sWt || sWt === "0") && (hasR1 || hasR3)) {
+            sWt = roundWeight((hasR1 ? r1Num : 0) + (hasR3 ? r3Num : 0));
+          }
+          const sNum = parseFloat(sWt);
+          const gNum = parseFloat(gWt);
+          if ((!nWt || nWt === "0") && !isNaN(gNum) && !isNaN(sNum)) {
+            nWt = roundWeight(gNum - sNum);
+          }
+
           onChange({
             imageUrl: item.imageUrl,
-            grossWeight: String(item.grossWeight ?? ""),
-            netWeight: String(item.netWeight ?? ""),
-            stoneWeight: String(item.stoneWeight ?? ""),
+            grossWeight: gWt,
+            netWeight: nWt,
+            stoneWeight: sWt,
             metalType: item.metalType ?? "",
             metalPurity: item.metalPurity ?? "",
             collectionLine: item.collectionLine ?? "",
-            reserved1: String(item.reserved1 ?? ""),
-            reserved3: String(item.reserved3 ?? ""),
+            reserved1: r1,
+            reserved3: r3,
           });
         } else {
           onChange({ imageUrl: undefined });
@@ -612,7 +714,9 @@ function JobRow({
                     step="0.001"
                     min="0"
                     value={row.grossWeight}
-                    onChange={(e) => onChange({ grossWeight: e.target.value })}
+                    onChange={(e) =>
+                      onChange(computeWeights(row, "grossWeight", e.target.value))
+                    }
                     placeholder="0.000"
                     className="h-10"
                     disabled={done || isSubmitting}
@@ -625,10 +729,10 @@ function JobRow({
                     step="0.001"
                     min="0"
                     value={row.stoneWeight}
-                    onChange={(e) => onChange({ stoneWeight: e.target.value })}
+                    readOnly
                     placeholder="0.000"
-                    className="h-10"
-                    disabled={done || isSubmitting}
+                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
+                    tabIndex={-1}
                   />
                 </Field>
               </div>
@@ -642,10 +746,10 @@ function JobRow({
                     step="0.001"
                     min="0"
                     value={row.netWeight}
-                    onChange={(e) => onChange({ netWeight: e.target.value })}
+                    readOnly
                     placeholder="0.000"
-                    className="h-10"
-                    disabled={done || isSubmitting}
+                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
+                    tabIndex={-1}
                   />
                 </Field>
                 <Field label="Metal Type" id={id("metal")}>
@@ -690,7 +794,9 @@ function JobRow({
                   <Input
                     id={id("reserved1")}
                     value={row.reserved1}
-                    onChange={(e) => onChange({ reserved1: e.target.value })}
+                    onChange={(e) =>
+                      onChange(computeWeights(row, "reserved1", e.target.value))
+                    }
                     placeholder="e.g. 12"
                     className="h-10"
                     disabled={done || isSubmitting}
@@ -700,7 +806,9 @@ function JobRow({
                   <Input
                     id={id("reserved3")}
                     value={row.reserved3}
-                    onChange={(e) => onChange({ reserved3: e.target.value })}
+                    onChange={(e) =>
+                      onChange(computeWeights(row, "reserved3", e.target.value))
+                    }
                     placeholder="e.g. 5"
                     className="h-10"
                     disabled={done || isSubmitting}
@@ -1023,25 +1131,44 @@ export default function NewPrintJobPage() {
 
                 if (!match) return r;
 
+                const gWt =
+                  r.grossWeight ||
+                  (match.grossWeight != null ? String(match.grossWeight) : "");
+                const r1 = r.reserved1 || match.reserved1 || "";
+                const r3 = r.reserved3 || match.reserved3 || "";
+                let sWt =
+                  r.stoneWeight ||
+                  (match.stoneWeight != null ? String(match.stoneWeight) : "");
+                let nWt =
+                  r.netWeight ||
+                  (match.netWeight != null ? String(match.netWeight) : "");
+
+                const r1Num = parseFloat(r1);
+                const r3Num = parseFloat(r3);
+                const hasR1 = !isNaN(r1Num);
+                const hasR3 = !isNaN(r3Num);
+                if ((!sWt || sWt === "0") && (hasR1 || hasR3)) {
+                  sWt = roundWeight((hasR1 ? r1Num : 0) + (hasR3 ? r3Num : 0));
+                }
+                const sNum = parseFloat(sWt);
+                const gNum = parseFloat(gWt);
+                if ((!nWt || nWt === "0") && !isNaN(gNum) && !isNaN(sNum)) {
+                  nWt = roundWeight(gNum - sNum);
+                }
+
                 return {
                   ...r,
                   imageUrl: r.imageUrl || match.imageUrl,
                   prefix: r.prefix || match.prefix || match.itemType || "",
                   designNumber: r.designNumber || match.designNumber || "",
-                  grossWeight:
-                    r.grossWeight ||
-                    (match.grossWeight != null ? String(match.grossWeight) : ""),
-                  netWeight:
-                    r.netWeight ||
-                    (match.netWeight != null ? String(match.netWeight) : ""),
-                  stoneWeight:
-                    r.stoneWeight ||
-                    (match.stoneWeight != null ? String(match.stoneWeight) : ""),
+                  grossWeight: gWt,
+                  netWeight: nWt,
+                  stoneWeight: sWt,
                   metalType: r.metalType || match.metalType || "",
                   metalPurity: r.metalPurity || match.metalPurity || "",
                   collectionLine: r.collectionLine || match.collectionLine || "",
-                  reserved1: r.reserved1 || match.reserved1 || "",
-                  reserved3: r.reserved3 || match.reserved3 || "",
+                  reserved1: r1,
+                  reserved3: r3,
                 };
               })
             );
