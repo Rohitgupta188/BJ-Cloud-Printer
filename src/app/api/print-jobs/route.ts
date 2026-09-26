@@ -43,6 +43,8 @@ const CreatePrintJobSchema = z.object({
     .regex(/^[A-Z0-9]+$/i, "Item type must be alphanumeric only"),
 
   designNumber:   z.string().trim().optional(),
+  imageName:      z.string().trim().optional(),
+  itemStatus:     z.string().trim().default("INSTOCK").optional(),
   grossWeight:    z.number().min(0).optional(),
   netWeight:      z.number().min(0).optional(),
   stoneWeight:    z.number().min(0).optional(),
@@ -52,8 +54,9 @@ const CreatePrintJobSchema = z.object({
   imageUrl:       z.string().trim().optional(),
   czWeight:       z.union([z.string().trim(), z.number()]).optional(),
   bsWeight:       z.union([z.string().trim(), z.number()]).optional(),
-  reserved1:      z.string().trim().optional(),
-  reserved3:      z.string().trim().optional(),
+  reserved1:       z.string().trim().optional(),
+  reserved3:       z.string().trim().optional(),
+  skipDriveUpload: z.boolean().optional(),
 });
 
 function generateTsplPayload(item: {
@@ -190,6 +193,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
   const {
     prefix,
     designNumber,
+    imageName,
+    itemStatus,
     grossWeight,
     netWeight,
     stoneWeight,
@@ -267,6 +272,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     const jobId = crypto.randomUUID();
     const { PrintJob } = await getPrinterModels();
 
+    const effectiveImageName = imageName || (designNumber ? `${designNumber}.jpg` : undefined);
+
     const job = await PrintJob.create({
       jobId,
       sku,
@@ -277,6 +284,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       createdBy: ctx.user.sub,
       retryCount: 0,
       designNumber,
+      imageName: effectiveImageName,
+      itemStatus: itemStatus || "INSTOCK",
       grossWeight,
       netWeight: effectiveNetWeight,
       stoneWeight: effectiveStoneWeight,
@@ -312,29 +321,34 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       // ── Drive Excel upload (Vercel Serverless background task) ────────────
       // Using after() guarantees Vercel keeps the function alive until the Drive
       // upload finishes, while returning the print response to the user instantly.
-      after(async () => {
-        try {
-          await uploadPrintJobsToExcel([{
-            sku,
-            rfid: sku,
-            designNumber,
-            metalType,
-            metalPurity,
-            grossWeight,
-            netWeight: effectiveNetWeight,
-            stoneWeight: effectiveStoneWeight,
-            collectionLine,
-            reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
-            reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
-            printerId,
-            status:    "MQTT_PUBLISHED",
-            createdAt: new Date(),
-            createdBy: ctx.user.sub,
-          }]);
-        } catch (driveErr) {
-          console.error(`[print-jobs] Drive upload failed for jobId="${jobId}":`, driveErr);
-        }
-      });
+      if (!parsedBody.data.skipDriveUpload) {
+        after(async () => {
+          try {
+            await uploadPrintJobsToExcel([{
+              sku,
+              rfid: sku,
+              designNumber,
+              imageName: effectiveImageName,
+              itemStatus: "INSTOCK",
+              itemType: prefix,
+              metalType,
+              metalPurity,
+              grossWeight,
+              netWeight: effectiveNetWeight,
+              stoneWeight: effectiveStoneWeight,
+              collectionLine,
+              reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
+              reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
+              printerId,
+              status:    "MQTT_PUBLISHED",
+              createdAt: new Date(),
+              createdBy: ctx.user.sub,
+            }]);
+          } catch (driveErr) {
+            console.error(`[print-jobs] Drive upload failed for jobId="${jobId}":`, driveErr);
+          }
+        });
+      }
 
     } catch (mqttErr) {
       const errMsg = mqttErr instanceof Error ? mqttErr.message : String(mqttErr);
