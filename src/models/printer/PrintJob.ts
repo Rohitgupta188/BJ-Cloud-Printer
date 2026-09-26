@@ -76,6 +76,15 @@ const PrintJobSchema = new Schema(
       type: String, 
       trim: true
     },
+    imageName: {
+      type: String,
+      trim: true
+    },
+    itemStatus: {
+      type: String,
+      trim: true,
+      default: "INSTOCK",
+    },
     grossWeight: {
       type: Number
     },
