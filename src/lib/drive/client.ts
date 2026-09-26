@@ -3,6 +3,16 @@ import { google } from "googleapis";
 const SCOPES = ["https://www.googleapis.com/auth/drive.file"];
 
 function getAuth() {
+  const oauthClientId     = process.env.GOOGLE_OAUTH_CLIENT_ID;
+  const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  const oauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN;
+
+  if (oauthClientId && oauthClientSecret && oauthRefreshToken) {
+    const oauth2Client = new google.auth.OAuth2(oauthClientId, oauthClientSecret);
+    oauth2Client.setCredentials({ refresh_token: oauthRefreshToken });
+    return oauth2Client;
+  }
+
   const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
   const privateKey   = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 
