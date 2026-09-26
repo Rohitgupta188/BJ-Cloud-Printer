@@ -35,6 +35,8 @@ import {
   Download,
   FileUp,
   Sparkles,
+  Layers,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -45,6 +47,8 @@ interface RowData {
   prefix: string;
   referenceSku?: string; // Previous/repeat order SKU (used for catalog auto-fill & reference)
   designNumber: string;
+  imageName?: string;
+  itemStatus?: string;
   grossWeight: string;
   netWeight: string;
   stoneWeight: string;
@@ -65,6 +69,7 @@ type JobResult =
 interface CatalogBatchItem {
   sku?: string;
   designNumber?: string;
+  imageName?: string;
   prefix?: string;
   itemType?: string;
   grossWeight?: number;
@@ -121,21 +126,35 @@ function mapHeaderToKey(
   headerStr: string
 ): keyof Omit<RowData, "id" | "imageUrl" | "imageLoading" | "expanded"> | null {
   const norm = normalizeHeader(headerStr);
-  if (["sku", "skunumber", "skuno", "barcode", "rfid", "referencesku", "prevsku"].includes(norm))
+  if (["sku", "skunumber", "skuno", "barcode", "rfid", "rfidtag", "referencesku", "prevsku"].includes(norm))
     return "referenceSku";
-  if (["itemtype", "prefix", "type", "category"].includes(norm)) return "prefix";
+  if (["itemtype", "prefix", "type"].includes(norm)) return "prefix";
   if (["designnumber", "designno", "design", "dno"].includes(norm)) return "designNumber";
+  if (["imagename", "image", "imgname", "photo"].includes(norm)) return "imageName";
+  if (["itemstatus", "status"].includes(norm)) return "itemStatus";
   if (["grossweight", "grossweightg", "grosswt", "grosswtg", "gross", "gwt"].includes(norm))
     return "grossWeight";
-  if (["netweight", "netweightg", "netwt", "netwtg", "net", "nwt"].includes(norm))
+  if (["netweight", "netweightg", "netwt", "netwtg", "net", "nwt", "metalweight"].includes(norm))
     return "netWeight";
-  if (["stoneweight", "stoneweightg", "stonewt", "stonewtg", "stone", "swt"].includes(norm))
+  if (
+    [
+      "stoneweight",
+      "totalstoneweight",
+      "stoneweightg",
+      "stonewt",
+      "stonewtg",
+      "stone",
+      "swt",
+    ].includes(norm)
+  )
     return "stoneWeight";
   if (["metaltype", "metal"].includes(norm)) return "metalType";
   if (["metalpurity", "purity", "kt", "karat"].includes(norm)) return "metalPurity";
   if (["collectionline", "collection", "line"].includes(norm)) return "collectionLine";
-  if (["czreserved1", "cz", "reserved1", "czwt"].includes(norm)) return "reserved1";
-  if (["bsreserved3", "bs", "reserved3", "bswt"].includes(norm)) return "reserved3";
+  if (["czwt", "cz", "czweight", "czreserved1", "reserved1"].includes(norm))
+    return "reserved1";
+  if (["bswt", "bs", "bsweight", "bsreserved3", "reserved3"].includes(norm))
+    return "reserved3";
   return null;
 }
 
@@ -147,6 +166,8 @@ function makeRow(id: string, initial?: Partial<RowData>): RowData {
     prefix: "",
     referenceSku: "",
     designNumber: "",
+    imageName: "",
+    itemStatus: "INSTOCK",
     grossWeight: "",
     netWeight: "",
     stoneWeight: "",
@@ -251,71 +272,75 @@ function uid() {
 
 // ── Excel Export ───────────────────────────────────────────────────────────
 
-async function downloadBatchExcel(
-  entries: { row: RowData; displaySku: string; result: JobResult | null }[]
-) {
+async function generateAndDownloadBatchExcel(
+  entries: { row: RowData; displaySku: string; result: JobResult | null }[],
+  customFileName?: string
+): Promise<{ blob: Blob; fileName: string }> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = "BJ Cloud Printer";
   wb.created = new Date();
   const ws = wb.addWorksheet("Print Jobs");
 
-  const headerFill = {
-    type: "pattern" as const,
-    pattern: "solid" as const,
-    fgColor: { argb: "FF1A1A2E" },
-  };
-  const headerFont = { bold: true, color: { argb: "FFFBBF24" }, size: 10 };
-
   ws.columns = [
-    { header: "Sr No", key: "srNo", width: 8 },
-    { header: "New SKU Number", key: "sku", width: 18 },
-    { header: "Item Type", key: "prefix", width: 12 },
-    { header: "Design Number", key: "designNumber", width: 18 },
-    { header: "Previous/Repeat SKU", key: "referenceSku", width: 20 },
-    { header: "Gross Weight", key: "grossWeight", width: 14 },
-    { header: "Net Weight", key: "netWeight", width: 14 },
-    { header: "Stone Weight", key: "stoneWeight", width: 14 },
-    { header: "Metal Type", key: "metalType", width: 14 },
-    { header: "Metal Purity", key: "metalPurity", width: 14 },
-    { header: "Collection Line", key: "collectionLine", width: 18 },
-    { header: "CZ (Reserved 1)", key: "reserved1", width: 16 },
-    { header: "BS (Reserved 3)", key: "reserved3", width: 16 },
-    { header: "Job ID", key: "jobId", width: 38 },
-    { header: "Status", key: "status", width: 18 },
+    { header: "RFID Tag",              key: "rfidTag",            width: 18 },
+    { header: "SKU Number",            key: "skuNumber",          width: 18 },
+    { header: "Design Number",         key: "designNumber",       width: 18 },
+    { header: "Image Name",            key: "imageName",          width: 22 },
+    { header: "Item Status",           key: "itemStatus",         width: 14 },
+    { header: "Sales Man Name",        key: "salesManName",       width: 16 },
+    { header: "Item Type",             key: "itemType",           width: 14 },
+    { header: "Size",                  key: "size",               width: 10 },
+    { header: "Gross Weight",          key: "grossWeight",        width: 14 },
+    { header: "Net Weight",            key: "netWeight",          width: 14 },
+    { header: "Collection Line",       key: "collectionLine",     width: 18 },
+    { header: "Item Category",         key: "itemCategory",       width: 16 },
+    { header: "Metal Type",            key: "metalType",          width: 14 },
+    { header: "Metal Purity",          key: "metalPurity",        width: 14 },
+    { header: "Metal Weight",          key: "metalWeight",        width: 14 },
+    { header: "Total Diamond Weight",  key: "totalDiamondWeight", width: 20 },
+    { header: "Total Stone Weight",    key: "totalStoneWeight",   width: 18 },
+    { header: "Stone Weight",          key: "stoneWeight",        width: 14 },
+    { header: "Selling Price",         key: "sellingPrice",       width: 14 },
+    { header: "CZ Wt",                 key: "czWt",               width: 12 },
+    { header: "Reserved 2",            key: "reserved2",          width: 14 },
+    { header: "BS Wt",                 key: "bsWt",               width: 12 },
+    { header: "CS Wt",                 key: "csWt",               width: 12 },
   ];
 
   const headerRow = ws.getRow(1);
   headerRow.eachCell((cell) => {
-    cell.fill = headerFill;
-    cell.font = headerFont;
+    cell.font = { bold: true, size: 10 };
     cell.alignment = { vertical: "middle", horizontal: "center" };
-    cell.border = { bottom: { style: "thin", color: { argb: "FFFBBF24" } } };
   });
   headerRow.height = 22;
 
-  entries.forEach(({ row, displaySku, result }, i) => {
+  entries.forEach(({ row, displaySku, result }) => {
+    const skuVal = result?.status === "success" ? result.sku : displaySku || "";
     ws.addRow({
-      srNo: i + 1,
-      sku: result?.status === "success" ? result.sku : displaySku || "—",
-      prefix: row.prefix,
-      designNumber: row.designNumber || "",
-      referenceSku: row.referenceSku || "—",
-      grossWeight: row.grossWeight ? Number(row.grossWeight) : "",
-      netWeight: row.netWeight ? Number(row.netWeight) : "",
-      stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
-      metalType: row.metalType || "",
-      metalPurity: row.metalPurity || "",
-      collectionLine: row.collectionLine || "",
-      reserved1: row.reserved1 || "",
-      reserved3: row.reserved3 || "",
-      jobId: result?.status === "success" ? result.jobId : "—",
-      status:
-        result?.status === "success"
-          ? result.mqttStatus
-          : result?.status === "error"
-            ? `ERROR: ${result.message}`
-            : "PENDING",
+      rfidTag:            skuVal,
+      skuNumber:          skuVal,
+      designNumber:       row.designNumber || "",
+      imageName:          row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : ""),
+      itemStatus:         row.itemStatus || "INSTOCK",
+      salesManName:       "",
+      itemType:           row.prefix || "",
+      size:               "",
+      grossWeight:        row.grossWeight ? Number(row.grossWeight) : "",
+      netWeight:          row.netWeight ? Number(row.netWeight) : "",
+      collectionLine:     row.collectionLine || "",
+      itemCategory:       "",
+      metalType:          row.metalType || "",
+      metalPurity:        row.metalPurity || "",
+      metalWeight:        row.netWeight ? Number(row.netWeight) : "",
+      totalDiamondWeight: "",
+      totalStoneWeight:   row.stoneWeight ? Number(row.stoneWeight) : "",
+      stoneWeight:        row.stoneWeight ? Number(row.stoneWeight) : "",
+      sellingPrice:       "",
+      czWt:               row.reserved1 || "",
+      reserved2:          "",
+      bsWt:               row.reserved3 || "",
+      csWt:               "",
     });
   });
 
@@ -327,6 +352,13 @@ async function downloadBatchExcel(
     });
   });
 
+  let fileName = (customFileName || "").trim();
+  if (!fileName) {
+    fileName = `print-jobs-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  } else if (!fileName.toLowerCase().endsWith(".xlsx")) {
+    fileName = `${fileName}.xlsx`;
+  }
+
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -334,9 +366,11 @@ async function downloadBatchExcel(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `print-jobs-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  a.download = fileName;
   a.click();
   URL.revokeObjectURL(url);
+
+  return { blob, fileName };
 }
 
 // ── Sample Template Download ───────────────────────────────────────────────
@@ -348,64 +382,91 @@ async function downloadSampleExcelTemplate() {
   wb.created = new Date();
   const ws = wb.addWorksheet("Import Template");
 
-  const headerFill = {
-    type: "pattern" as const,
-    pattern: "solid" as const,
-    fgColor: { argb: "FF1A1A2E" },
-  };
-  const headerFont = { bold: true, color: { argb: "FFFBBF24" }, size: 10 };
-
   ws.columns = [
-    { header: "Previous SKU (Optional)", key: "referenceSku", width: 24 },
-    { header: "Item Type", key: "prefix", width: 14 },
-    { header: "Design Number", key: "designNumber", width: 18 },
-    { header: "Gross Weight", key: "grossWeight", width: 14 },
-    { header: "Net Weight", key: "netWeight", width: 14 },
-    { header: "Stone Weight", key: "stoneWeight", width: 14 },
-    { header: "Metal Type", key: "metalType", width: 14 },
-    { header: "Metal Purity", key: "metalPurity", width: 14 },
-    { header: "Collection Line", key: "collectionLine", width: 18 },
-    { header: "CZ (Reserved 1)", key: "reserved1", width: 16 },
-    { header: "BS (Reserved 3)", key: "reserved3", width: 16 },
+    { header: "RFID Tag",              key: "rfidTag",            width: 18 },
+    { header: "SKU Number",            key: "skuNumber",          width: 18 },
+    { header: "Design Number",         key: "designNumber",       width: 18 },
+    { header: "Image Name",            key: "imageName",          width: 22 },
+    { header: "Item Status",           key: "itemStatus",         width: 14 },
+    { header: "Sales Man Name",        key: "salesManName",       width: 16 },
+    { header: "Item Type",             key: "itemType",           width: 14 },
+    { header: "Size",                  key: "size",               width: 10 },
+    { header: "Gross Weight",          key: "grossWeight",        width: 14 },
+    { header: "Net Weight",            key: "netWeight",          width: 14 },
+    { header: "Collection Line",       key: "collectionLine",     width: 18 },
+    { header: "Item Category",         key: "itemCategory",       width: 16 },
+    { header: "Metal Type",            key: "metalType",          width: 14 },
+    { header: "Metal Purity",          key: "metalPurity",        width: 14 },
+    { header: "Metal Weight",          key: "metalWeight",        width: 14 },
+    { header: "Total Diamond Weight",  key: "totalDiamondWeight", width: 20 },
+    { header: "Total Stone Weight",    key: "totalStoneWeight",   width: 18 },
+    { header: "Stone Weight",          key: "stoneWeight",        width: 14 },
+    { header: "Selling Price",         key: "sellingPrice",       width: 14 },
+    { header: "CZ Wt",                 key: "czWt",               width: 12 },
+    { header: "Reserved 2",            key: "reserved2",          width: 14 },
+    { header: "BS Wt",                 key: "bsWt",               width: 12 },
+    { header: "CS Wt",                 key: "csWt",               width: 12 },
   ];
 
   const headerRow = ws.getRow(1);
   headerRow.eachCell((cell) => {
-    cell.fill = headerFill;
-    cell.font = headerFont;
+    cell.font = { bold: true, size: 10 };
     cell.alignment = { vertical: "middle", horizontal: "center" };
-    cell.border = { bottom: { style: "thin", color: { argb: "FFFBBF24" } } };
   });
-  headerRow.height = 24;
+  headerRow.height = 22;
 
-  // Sample row 1: Repeat order example (uses previous SKU to auto-fill details, brand new SKU generated on print)
+  // Sample row 1
   ws.addRow({
-    referenceSku: "TRTP5614",
-    prefix: "TRTP",
-    designNumber: "DZGR35196",
-    grossWeight: 12.45,
-    netWeight: 11.2,
-    stoneWeight: 1.25,
-    metalType: "Gold",
-    metalPurity: "22K",
-    collectionLine: "Bridal",
-    reserved1: "10",
-    reserved3: "2",
+    rfidTag:            "RFID001",
+    skuNumber:          "DZSGR1001",
+    designNumber:       "DZSGR-6961",
+    imageName:          "DZSGR-6961.jpg",
+    itemStatus:         "INSTOCK",
+    salesManName:       "John",
+    itemType:           "DZSGR",
+    size:               "16",
+    grossWeight:        12.45,
+    netWeight:          12.074,
+    collectionLine:     "Bridal",
+    itemCategory:       "Ring",
+    metalType:          "R",
+    metalPurity:        "18K",
+    metalWeight:        12.074,
+    totalDiamondWeight: 0,
+    totalStoneWeight:   0.376,
+    stoneWeight:        0.376,
+    sellingPrice:       45000,
+    czWt:               "0.000",
+    reserved2:          "",
+    bsWt:               "0.376",
+    csWt:               "",
   });
 
-  // Sample row 2: New order example
+  // Sample row 2
   ws.addRow({
-    referenceSku: "",
-    prefix: "RING",
-    designNumber: "DZRN1002",
-    grossWeight: 8.5,
-    netWeight: 8.1,
-    stoneWeight: 0.4,
-    metalType: "Gold",
-    metalPurity: "18K",
-    collectionLine: "Classic",
-    reserved1: "4",
-    reserved3: "0",
+    rfidTag:            "RFID002",
+    skuNumber:          "DZMS1002",
+    designNumber:       "DZMS-2963",
+    imageName:          "DZMS-2963.jpg",
+    itemStatus:         "INSTOCK",
+    salesManName:       "Sarah",
+    itemType:           "DZMS",
+    size:               "14",
+    grossWeight:        1.641,
+    netWeight:          1.611,
+    collectionLine:     "Classic",
+    itemCategory:       "Pendant",
+    metalType:          "Y",
+    metalPurity:        "18K",
+    metalWeight:        1.611,
+    totalDiamondWeight: 0,
+    totalStoneWeight:   0.03,
+    stoneWeight:        0.03,
+    sellingPrice:       12500,
+    czWt:               "0.030",
+    reserved2:          "",
+    bsWt:               "0.000",
+    csWt:               "",
   });
 
   ws.eachRow((r, ri) => {
@@ -499,16 +560,18 @@ function JobRow({
   const designTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchImage = useCallback(
-    async (dn: string) => {
+    async (dn: string, imgName?: string) => {
       const trimmed = dn.trim();
-      if (!trimmed) {
+      const trimmedImg = (imgName || "").trim();
+      const lookup = trimmed || (trimmedImg ? trimmedImg.replace(/\.jpg$/i, "") : "");
+      if (!lookup) {
         onChange({ imageUrl: undefined });
         return;
       }
       onChange({ imageLoading: true });
       try {
         const res = await fetch(
-          `/api/catalog/design/${encodeURIComponent(trimmed)}`
+          `/api/catalog/design/${encodeURIComponent(lookup)}`
         );
         const data = await res.json();
         if (res.ok && data.data) {
@@ -534,6 +597,9 @@ function JobRow({
 
           onChange({
             imageUrl: item.imageUrl,
+            imageName:
+              item.imageName ||
+              (item.designNumber ? `${item.designNumber}.jpg` : imgName || `${lookup}.jpg`),
             grossWeight: gWt,
             netWeight: nWt,
             stoneWeight: sWt,
@@ -556,9 +622,20 @@ function JobRow({
   );
 
   function handleDesignChange(val: string) {
-    onChange({ designNumber: val });
+    const trimmed = val.trim();
+    const prevExpected = row.designNumber.trim() ? `${row.designNumber.trim()}.jpg` : "";
+    const shouldUpdateImageName = !row.imageName || row.imageName === prevExpected;
+    const newImageName = shouldUpdateImageName ? (trimmed ? `${trimmed}.jpg` : "") : row.imageName;
+
+    onChange({ designNumber: val, imageName: newImageName });
     if (designTimer.current) clearTimeout(designTimer.current);
-    designTimer.current = setTimeout(() => fetchImage(val), 800);
+    designTimer.current = setTimeout(() => fetchImage(val, newImageName), 800);
+  }
+
+  function handleImageNameChange(val: string) {
+    onChange({ imageName: val });
+    if (designTimer.current) clearTimeout(designTimer.current);
+    designTimer.current = setTimeout(() => fetchImage(row.designNumber, val), 800);
   }
 
   useEffect(
@@ -600,14 +677,6 @@ function JobRow({
             <span className="font-mono text-xs font-medium text-primary">
               → {displaySku}
             </span>
-          )}
-          {row.referenceSku && (
-            <Badge
-              variant="outline"
-              className="text-[10px] py-0 px-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30"
-            >
-              Repeat of {row.referenceSku}
-            </Badge>
           )}
           {skuLoading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
@@ -651,7 +720,7 @@ function JobRow({
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* ── Left: form fields (2/3 width) ── */}
             <div className="lg:col-span-2 space-y-4">
-              {/* Row 1: Item type + Previous SKU + Design number */}
+              {/* Row 1: Item type + Design number + Image Name */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field label="Item Type *" id={id("prefix")}>
                   <Input
@@ -665,23 +734,6 @@ function JobRow({
                     placeholder="e.g. TRTP, RING"
                     className="h-10 font-mono uppercase tracking-widest"
                     maxLength={20}
-                    disabled={done || isSubmitting}
-                  />
-                </Field>
-
-                <Field label="Previous SKU (Optional)" id={id("refSku")}>
-                  <Input
-                    id={id("refSku")}
-                    value={row.referenceSku ?? ""}
-                    onChange={(e) => {
-                      const val = e.target.value.toUpperCase().trim();
-                      onChange({
-                        referenceSku: val,
-                        prefix: row.prefix || (val ? val.replace(/\d+$/, "") : ""),
-                      });
-                    }}
-                    placeholder="e.g. TRTP5614"
-                    className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -700,6 +752,17 @@ function JobRow({
                       <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
                     )}
                   </div>
+                </Field>
+
+                <Field label="Image Name" id={id("imageName")}>
+                  <Input
+                    id={id("imageName")}
+                    value={row.imageName || ""}
+                    onChange={(e) => handleImageNameChange(e.target.value)}
+                    placeholder="e.g. DZGR35196.jpg"
+                    className="h-10 font-mono text-xs"
+                    disabled={done || isSubmitting}
+                  />
                 </Field>
               </div>
 
@@ -756,9 +819,11 @@ function JobRow({
                   <Input
                     id={id("metal")}
                     value={row.metalType}
-                    onChange={(e) => onChange({ metalType: e.target.value })}
-                    placeholder="Gold, Silver…"
-                    className="h-10"
+                    onChange={(e) =>
+                      onChange({ metalType: e.target.value.toUpperCase() })
+                    }
+                    placeholder="R, S, Y"
+                    className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -770,9 +835,11 @@ function JobRow({
                   <Input
                     id={id("purity")}
                     value={row.metalPurity}
-                    onChange={(e) => onChange({ metalPurity: e.target.value })}
-                    placeholder="22K, 18K…"
-                    className="h-10"
+                    onChange={(e) =>
+                      onChange({ metalPurity: e.target.value.toUpperCase() })
+                    }
+                    placeholder="18K, 22K, 9K"
+                    className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -854,9 +921,7 @@ function JobRow({
                     </p>
                   )}
                   <p className="text-[9px] text-muted-foreground/60 mt-1">
-                    {row.referenceSku
-                      ? `New SKU for repeat order (${row.referenceSku})`
-                      : "Assigned sequentially on submit"}
+                    Assigned sequentially on submit
                   </p>
                 </div>
               )}
@@ -869,20 +934,20 @@ function JobRow({
                   <>
                     <img
                       src={row.imageUrl}
-                      alt={row.designNumber || row.referenceSku || "Product Image"}
+                      alt={row.designNumber || "Product Image"}
                       className="max-h-56 max-w-full rounded-lg object-contain shadow-lg ring-1 ring-border/20"
                     />
-                    <span className="mt-2 text-[10px] font-mono text-muted-foreground">
-                      {row.designNumber || row.referenceSku}
+                    <span className="mt-2 text-[10px] font-mono text-muted-foreground text-center break-all">
+                      {row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : "")}
                     </span>
                   </>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-center">
                     <ImageOff className="h-8 w-8 text-muted-foreground/30" />
                     <p className="text-xs text-muted-foreground/60">
-                      {row.designNumber || row.referenceSku
+                      {row.designNumber
                         ? "Design image not found"
-                        : "Enter design number or previous SKU to view image"}
+                        : "Enter design number to view image"}
                     </p>
                   </div>
                 )}
@@ -906,6 +971,38 @@ export default function NewPrintJobPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+
+  // ── Excel Filename Modal & Print Flow ─────────────────────────────────────
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+  const [excelFileName, setExcelFileName] = useState("");
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+
+  // ── Batch Metal Defaults ─────────────────────────────────────────────────
+  const [batchMetalType, setBatchMetalType] = useState("");
+  const [batchMetalPurity, setBatchMetalPurity] = useState("");
+
+  function applyBatchMetalToAll() {
+    const trimmedType = batchMetalType.trim();
+    const trimmedPurity = batchMetalPurity.trim();
+
+    if (!trimmedType && !trimmedPurity) {
+      toast.error("Please enter a Metal Type or Metal Purity to apply.");
+      return;
+    }
+
+    setRows((prev) =>
+      prev.map((r) => ({
+        ...r,
+        ...(trimmedType ? { metalType: trimmedType } : {}),
+        ...(trimmedPurity ? { metalPurity: trimmedPurity } : {}),
+      }))
+    );
+
+    const parts = [trimmedType, trimmedPurity].filter(Boolean).join(" • ");
+    toast.success(
+      `Applied ${parts} to all ${rows.length} item${rows.length > 1 ? "s" : ""}.`
+    );
+  }
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -973,7 +1070,13 @@ export default function NewPrintJobPage() {
   }
 
   function addRow() {
-    setRows((prev) => [...prev, makeRow(uid())]);
+    setRows((prev) => [
+      ...prev,
+      makeRow(uid(), {
+        metalType: batchMetalType.trim() || (prev[prev.length - 1]?.metalType ?? ""),
+        metalPurity: batchMetalPurity.trim() || (prev[prev.length - 1]?.metalPurity ?? ""),
+      }),
+    ]);
   }
 
   function removeRow(id: string) {
@@ -1059,20 +1162,37 @@ export default function NewPrintJobPage() {
         if (!hasAnyData) return;
 
         const rawRefSku = (rowValues.referenceSku || "").toUpperCase().trim();
+        const rawDesignNumber = (rowValues.designNumber || "").trim();
+        const rawImageName = (rowValues.imageName || "").trim();
+        const effectiveImageName =
+          rawImageName || (rawDesignNumber ? `${rawDesignNumber}.jpg` : "");
         const rawPrefix = (rowValues.prefix || "").toUpperCase().trim();
         const effectivePrefix =
-          rawPrefix || (rawRefSku ? rawRefSku.replace(/\d+$/, "").toUpperCase() : "");
+          rawPrefix ||
+          (rawRefSku ? rawRefSku.replace(/\d+$/, "").toUpperCase() : "") ||
+          (rawDesignNumber ? rawDesignNumber.replace(/[-_0-9].*$/, "").toUpperCase() : "");
+
+        const rawMetal = (rowValues.metalType || "").trim().toUpperCase();
+        const effectiveMetal = rawMetal || batchMetalType.trim();
+
+        const rawPurity = (rowValues.metalPurity || "").trim().toUpperCase();
+        const normalizedPurity = /^\d+$/.test(rawPurity)
+          ? `${rawPurity}K`
+          : rawPurity;
+        const effectivePurity = normalizedPurity || batchMetalPurity.trim();
 
         parsedRows.push(
           makeRow(uid(), {
             referenceSku: rawRefSku,
             prefix: effectivePrefix,
-            designNumber: (rowValues.designNumber || "").trim(),
+            designNumber: rawDesignNumber,
+            imageName: effectiveImageName,
+            itemStatus: (rowValues.itemStatus || "INSTOCK").trim(),
             grossWeight: (rowValues.grossWeight || "").trim(),
             netWeight: (rowValues.netWeight || "").trim(),
             stoneWeight: (rowValues.stoneWeight || "").trim(),
-            metalType: (rowValues.metalType || "").trim(),
-            metalPurity: (rowValues.metalPurity || "").trim(),
+            metalType: effectiveMetal,
+            metalPurity: effectivePurity,
             collectionLine: (rowValues.collectionLine || "").trim(),
             reserved1: (rowValues.reserved1 || "").trim(),
             reserved3: (rowValues.reserved3 || "").trim(),
@@ -1101,10 +1221,11 @@ export default function NewPrintJobPage() {
 
       // 3. Batch Catalog Lookup to auto-fill images, weights, and details
       const queries = parsedRows
-        .filter((r) => r.referenceSku || r.designNumber)
+        .filter((r) => r.referenceSku || r.designNumber || r.imageName)
         .map((r) => ({
           sku: r.referenceSku || undefined,
           designNumber: r.designNumber || undefined,
+          imageName: r.imageName || undefined,
         }));
 
       if (queries.length > 0) {
@@ -1127,6 +1248,9 @@ export default function NewPrintJobPage() {
                     : null) ||
                   (r.designNumber
                     ? resultsMap[`dn:${r.designNumber.toUpperCase()}`]
+                    : null) ||
+                  (r.imageName
+                    ? resultsMap[`img:${r.imageName.toLowerCase()}`]
                     : null);
 
                 if (!match) return r;
@@ -1159,6 +1283,10 @@ export default function NewPrintJobPage() {
                 return {
                   ...r,
                   imageUrl: r.imageUrl || match.imageUrl,
+                  imageName:
+                    r.imageName ||
+                    match.imageName ||
+                    (match.designNumber ? `${match.designNumber}.jpg` : ""),
                   prefix: r.prefix || match.prefix || match.itemType || "",
                   designNumber: r.designNumber || match.designNumber || "",
                   grossWeight: gWt,
@@ -1213,7 +1341,7 @@ export default function NewPrintJobPage() {
     return null;
   }
 
-  // ── Submit ───────────────────────────────────────────────────────────────
+  // ── Print Flow: Prompt Filename -> Auto-Download -> Save to Drive -> Print to MQTT ──
 
   function handleSubmit() {
     const err = validateAll();
@@ -1222,72 +1350,144 @@ export default function NewPrintJobPage() {
       return;
     }
 
-    startTransition(async () => {
-      setSubmitted(true);
-      const newResults = new Map<string, JobResult>();
+    const firstPrefix = rows[0]?.prefix?.trim() || "BATCH";
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const defaultName = `BJ_Print_${firstPrefix}_${dateStr}_${rows.length}items.xlsx`;
+    setExcelFileName(defaultName);
+    setIsNameModalOpen(true);
+  }
 
-      for (const row of rows) {
-        try {
-          const res = await authFetch("/api/print-jobs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...csrfHeaders() },
-            body: JSON.stringify({
-              prefix: row.prefix.trim().toUpperCase(),
-              designNumber: row.designNumber || undefined,
-              grossWeight: row.grossWeight ? Number(row.grossWeight) : undefined,
-              netWeight: row.netWeight ? Number(row.netWeight) : undefined,
-              stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : undefined,
-              metalType: row.metalType || undefined,
-              metalPurity: row.metalPurity || undefined,
-              collectionLine: row.collectionLine || undefined,
-              imageUrl: row.imageUrl || undefined,
-              reserved1: row.reserved1 || undefined,
-              reserved3: row.reserved3 || undefined,
-            }),
-          });
-          const data = await res.json();
-          if (!res.ok) {
+  async function executePrintFlow(fileNameInput: string) {
+    let cleanName = fileNameInput.trim();
+    if (!cleanName) {
+      toast.error("Please enter a valid Excel file name.");
+      return;
+    }
+    if (!cleanName.toLowerCase().endsWith(".xlsx")) {
+      cleanName = `${cleanName}.xlsx`;
+    }
+
+    setIsProcessingBatch(true);
+    const toastId = toast.loading("Generating Excel file…");
+
+    try {
+      // 1. Prepare entries with preview SKUs
+      const entries = rows.map((row, i) => ({
+        row,
+        displaySku: computeDisplaySku(i),
+        result: null,
+      }));
+
+      // 2. Build workbook and automatically download the Excel file
+      const { blob, fileName: finalName } = await generateAndDownloadBatchExcel(
+        entries,
+        cleanName
+      );
+
+      toast.loading(`Saving "${finalName}" to Google Drive…`, { id: toastId });
+
+      // 3. Upload the Excel file directly to Google Drive
+      const formData = new FormData();
+      formData.append("file", blob, finalName);
+      formData.append("fileName", finalName);
+
+      const driveRes = await authFetch("/api/print-jobs/upload-excel", {
+        method: "POST",
+        headers: csrfHeaders(),
+        body: formData,
+      });
+
+      if (!driveRes.ok) {
+        const driveData = await driveRes.json().catch(() => ({}));
+        console.error("[Drive upload error]", driveData);
+        toast.warning(
+          driveData.error || "Excel downloaded locally. (Google Drive upload failed)",
+          { id: toastId, duration: 8000 }
+        );
+      } else {
+        toast.success(`Excel saved to Google Drive & downloaded!`, { id: toastId });
+      }
+
+      // Close modal now that file is named, downloaded, and uploaded to Drive
+      setIsNameModalOpen(false);
+
+      // 4. Send jobs to MQTT
+      startTransition(async () => {
+        setSubmitted(true);
+        const newResults = new Map<string, JobResult>();
+
+        for (const row of rows) {
+          try {
+            const res = await authFetch("/api/print-jobs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...csrfHeaders() },
+              body: JSON.stringify({
+                prefix: row.prefix.trim().toUpperCase(),
+                designNumber: row.designNumber || undefined,
+                imageName:
+                  row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
+                itemStatus: row.itemStatus || "INSTOCK",
+                grossWeight: row.grossWeight ? Number(row.grossWeight) : undefined,
+                netWeight: row.netWeight ? Number(row.netWeight) : undefined,
+                stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : undefined,
+                metalType: row.metalType || undefined,
+                metalPurity: row.metalPurity || undefined,
+                collectionLine: row.collectionLine || undefined,
+                imageUrl: row.imageUrl || undefined,
+                reserved1: row.reserved1 || undefined,
+                reserved3: row.reserved3 || undefined,
+                skipDriveUpload: true, // Already uploaded the whole batch to Drive with custom name!
+              }),
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+              newResults.set(row.id, {
+                status: "error",
+                sku: computeDisplaySku(rows.indexOf(row)),
+                message: data.error ?? "Server error",
+              });
+            } else {
+              const job = data.data.job;
+              newResults.set(row.id, {
+                status: "success",
+                sku: job.sku,
+                jobId: job.jobId,
+                mqttStatus: job.status,
+              });
+              setSkuCache((prev) => ({
+                ...prev,
+                [row.prefix.toUpperCase()]: job.sku,
+              }));
+            }
+          } catch {
             newResults.set(row.id, {
               status: "error",
               sku: computeDisplaySku(rows.indexOf(row)),
-              message: data.error ?? "Server error",
+              message: "Network error",
             });
-          } else {
-            const job = data.data.job;
-            newResults.set(row.id, {
-              status: "success",
-              sku: job.sku,
-              jobId: job.jobId,
-              mqttStatus: job.status,
-            });
-            // Update cache so next batch row preview reflects the newly committed SKU
-            setSkuCache((prev) => ({
-              ...prev,
-              [row.prefix.toUpperCase()]: job.sku,
-            }));
           }
-        } catch {
-          newResults.set(row.id, {
-            status: "error",
-            sku: computeDisplaySku(rows.indexOf(row)),
-            message: "Network error",
-          });
+          setResults(new Map(newResults));
         }
-        setResults(new Map(newResults));
-      }
 
-      const ok = [...newResults.values()].filter(
-        (r) => r.status === "success"
-      ).length;
-      const fail = rows.length - ok;
-      if (fail === 0)
-        toast.success(`${ok} job${ok > 1 ? "s" : ""} created with new unique SKUs.`);
-      else if (ok === 0) toast.error(`All ${fail} jobs failed.`);
-      else toast.warning(`${ok} succeeded, ${fail} failed.`);
-    });
+        const ok = [...newResults.values()].filter(
+          (r) => r.status === "success"
+        ).length;
+        const fail = rows.length - ok;
+        if (fail === 0)
+          toast.success(`${ok} job${ok > 1 ? "s" : ""} sent to MQTT printer.`);
+        else if (ok === 0) toast.error(`All ${fail} print jobs failed.`);
+        else toast.warning(`${ok} printed, ${fail} failed.`);
+      });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to process print batch";
+      toast.error(msg, { id: toastId });
+    } finally {
+      setIsProcessingBatch(false);
+    }
   }
 
-  // ── Excel Export ─────────────────────────────────────────────────────────
+  // ── Manual Excel Export ──────────────────────────────────────────────────
 
   async function handleExcel() {
     const entries = rows.map((row, i) => ({
@@ -1296,7 +1496,7 @@ export default function NewPrintJobPage() {
       result: results.get(row.id) ?? null,
     }));
     try {
-      await downloadBatchExcel(entries);
+      await generateAndDownloadBatchExcel(entries);
       toast.success("Excel downloaded.");
     } catch {
       toast.error("Excel export failed.");
@@ -1324,7 +1524,7 @@ export default function NewPrintJobPage() {
   const hasAnyPrefix = rows.some((r) => r.prefix.trim().length > 0);
 
   return (
-    <div className="flex-1 overflow-auto">
+    <div className="flex-1 flex flex-col overflow-auto">
       {/* ── Header ── */}
       <div className="flex items-center gap-4 border-b border-border/50 bg-background/80 px-8 py-5 backdrop-blur-sm sticky top-0 z-10">
         <Button
@@ -1339,9 +1539,9 @@ export default function NewPrintJobPage() {
         </Button>
         <div className="flex-1 min-w-0">
           <h1 className="text-lg font-bold tracking-tight">New Print Job</h1>
-          <p className="mt-0.5 text-xs text-muted-foreground">
+          {/* <p className="mt-0.5 text-xs text-muted-foreground">
             Print single items, repeat orders, or upload an Excel sheet — a new sequential SKU is assigned to every label
-          </p>
+          </p> */}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1353,34 +1553,6 @@ export default function NewPrintJobPage() {
             accept=".xlsx,.xls"
             className="hidden"
           />
-
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5 text-xs border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isPending || isImporting}
-          >
-            {isImporting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <FileUp className="h-3.5 w-3.5" />
-            )}
-            Import Excel
-          </Button>
-
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            onClick={downloadSampleExcelTemplate}
-            title="Download sample Excel template"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Template
-          </Button>
 
           {rows.length > 1 && (
             <Button
@@ -1417,7 +1589,8 @@ export default function NewPrintJobPage() {
         </div>
       </div>
 
-      <div className="max-w-6xl space-y-4 px-8 py-8">
+      {/* ── Scrollable Form Body ── */}
+      <div className="flex-1 max-w-6xl w-full space-y-4 px-8 py-8 pb-32">
         {/* ── Quick Import Banner & Drag-and-drop zone ── */}
         <div
           onDragOver={(e) => {
@@ -1444,12 +1617,12 @@ export default function NewPrintJobPage() {
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  Import Excel for Repeat Orders & Batch Printing
+                  Import Excel for Batch Printing
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                 </p>
-                <p className="text-xs text-muted-foreground">
+                {/* <p className="text-xs text-muted-foreground">
                   Upload an Excel (.xlsx) file containing past SKUs or design numbers. Product details & images auto-fill, and new unique SKUs are generated for printing.
-                </p>
+                </p> */}
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
@@ -1466,18 +1639,121 @@ export default function NewPrintJobPage() {
                 ) : (
                   <FileUp className="h-3.5 w-3.5" />
                 )}
-                Upload Sheet
+                Import Excel
               </Button>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="gap-1.5 text-xs text-muted-foreground"
+                className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
                 onClick={downloadSampleExcelTemplate}
               >
                 <Download className="h-3.5 w-3.5" />
                 Sample Template
               </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Batch Defaults (Metal Type & Purity) ── */}
+        <div className="rounded-xl border border-border/50 bg-card p-4 shadow-xs">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0 border border-amber-500/25">
+                <Layers className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">
+                    Batch Metal & Purity
+                  </h3>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+              <div className="flex items-center gap-2">
+                <div className="w-36 sm:w-40">
+                  <Input
+                    value={batchMetalType}
+                    onChange={(e) =>
+                      setBatchMetalType(e.target.value.toUpperCase())
+                    }
+                    placeholder="Metal (R, S, Y)"
+                    className="h-9 text-xs font-mono uppercase tracking-wider"
+                    maxLength={10}
+                    disabled={isPending}
+                  />
+                </div>
+                <div className="w-28 sm:w-36">
+                  <Input
+                    value={batchMetalPurity}
+                    onChange={(e) =>
+                      setBatchMetalPurity(e.target.value.toUpperCase())
+                    }
+                    placeholder="Purity (18K, 22K, 9K)"
+                    className="h-9 text-xs font-mono uppercase tracking-wider"
+                    maxLength={10}
+                    disabled={isPending}
+                  />
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyBatchMetalToAll}
+                disabled={
+                  isPending ||
+                  (!batchMetalType.trim() && !batchMetalPurity.trim())
+                }
+                className="gap-1.5 h-9 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 hover:text-amber-700 dark:hover:text-amber-300 shrink-0 cursor-pointer"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Apply to All ({rows.length})
+              </Button>
+            </div>
+          </div>
+
+          {/* Quick presets */}
+          <div className="mt-3 pt-3 border-t border-border/30 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-muted-foreground">
+            <span className="text-[10px] uppercase font-medium tracking-wider text-muted-foreground/70">
+              Quick presets:
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {[
+                { type: "R", purity: "18K" },
+                { type: "S", purity: "18K" },
+                { type: "Y", purity: "18K" },
+                { type: "R", purity: "22K" },
+                { type: "Y", purity: "22K" },
+                { type: "S", purity: "22K" },
+                { type: "R", purity: "9K" },
+                { type: "Y", purity: "9K" },
+                { type: "S", purity: "9K" },
+              ].map((p) => {
+                const isSelected =
+                  batchMetalType === p.type && batchMetalPurity === p.purity;
+                return (
+                  <button
+                    key={`${p.type}-${p.purity}`}
+                    type="button"
+                    onClick={() => {
+                      setBatchMetalType(p.type);
+                      setBatchMetalPurity(p.purity);
+                    }}
+                    className={`rounded-md border px-2.5 py-1 text-xs font-mono font-medium transition-all cursor-pointer ${
+                      isSelected
+                        ? "border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold shadow-xs"
+                        : "border-border/40 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
+                    }`}
+                    disabled={isPending}
+                  >
+                    {p.type} {p.purity}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1535,74 +1811,198 @@ export default function NewPrintJobPage() {
           ))}
         </div>
 
-        {/* ── Bottom action bar ── */}
-        <div className="flex flex-wrap items-center gap-3 pt-2">
-          {/* Add item — always visible unless done */}
-          {!allDone && (
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2 border-dashed"
-              onClick={addRow}
-              disabled={isPending}
-            >
-              <Plus className="h-4 w-4" />
-              Add Item
-            </Button>
-          )}
+      </div>
 
-          {/* Excel — always available once there's any prefix */}
-          {hasAnyPrefix && (
-            <Button
-              type="button"
-              variant="outline"
-              className="gap-2 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
-              onClick={handleExcel}
-              disabled={isPending}
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              Download Excel
-            </Button>
-          )}
+      {/* ── Fixed Pinned Bottom Action Bar ── */}
+      <div className="sticky bottom-0 z-20 border-t border-border/50 bg-background/95 backdrop-blur-md px-8 py-3.5 shadow-lg">
+        <div className="max-w-6xl flex flex-wrap items-center justify-between gap-3">
+          {/* Left: Item Count, Add Item, Download Excel */}
+          <div className="flex items-center gap-3">
+            <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground/80">
+              {rows.length} {rows.length === 1 ? "Item" : "Items"}
+            </span>
 
-          <div className="flex-1" />
-
-          {/* Done actions */}
-          {allDone ? (
-            <>
+            {!allDone && (
               <Button
+                type="button"
                 variant="outline"
-                onClick={() => router.push("/dashboard")}
+                size="sm"
+                className="gap-1.5 border-dashed font-medium text-xs h-8"
+                onClick={addRow}
+                disabled={isPending}
               >
-                View All Jobs
+                <Plus className="h-3.5 w-3.5" />
+                Add Item
               </Button>
-              <Button className="gap-2" onClick={handleReset}>
-                <Printer className="h-4 w-4" />
-                New Batch
+            )}
+
+            {hasAnyPrefix && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
+                onClick={handleExcel}
+                disabled={isPending}
+              >
+                <FileSpreadsheet className="h-3.5 w-3.5" />
+                Download Excel
               </Button>
-            </>
-          ) : (
-            <Button
-              id="submit-batch-btn"
-              className="gap-2 min-w-36"
-              onClick={handleSubmit}
-              disabled={isPending || !hasAnyPrefix}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {results.size + 1} / {rows.length}…
-                </>
-              ) : (
-                <>
-                  <Printer className="h-4 w-4" />
-                  Print {rows.length} Job{rows.length > 1 ? "s" : ""}
-                </>
-              )}
-            </Button>
-          )}
+            )}
+          </div>
+
+          {/* Right: Done actions or Submit Print */}
+          <div className="flex items-center gap-2">
+            {allDone ? (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push("/dashboard")}
+                  className="h-9 text-xs"
+                >
+                  View All Jobs
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-9 text-xs"
+                  onClick={handleReset}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  New Batch
+                </Button>
+              </>
+            ) : (
+              <Button
+                id="submit-batch-btn"
+                className="gap-2 min-w-40 font-semibold shadow-xs"
+                onClick={handleSubmit}
+                disabled={isPending || !hasAnyPrefix}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Printing {results.size + 1} / {rows.length}…
+                  </>
+                ) : (
+                  <>
+                    <Printer className="h-4 w-4" />
+                    Print {rows.length} Job{rows.length > 1 ? "s" : ""}
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* ── Excel Filename Modal ── */}
+      {isNameModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div
+            className="w-full max-w-md rounded-2xl border border-border/60 bg-card p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <FileSpreadsheet className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    Name Your Excel File
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Name the Excel file before printing and saving to Google Drive.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isProcessingBatch && setIsNameModalOpen(false)}
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                disabled={isProcessingBatch}
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-border/40 bg-muted/20 p-3 space-y-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 text-foreground font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                <span>Actions performed on confirm:</span>
+              </div>
+              <ul className="list-disc list-inside space-y-1 pl-1 text-[11px]">
+                <li>Auto-downloads Excel file to your computer</li>
+                <li>Uploads and saves copy to Google Drive folder</li>
+                <li>Dispatches print payloads for {rows.length} item{rows.length > 1 ? "s" : ""} to MQTT</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <label
+                htmlFor="batch-excel-filename-input"
+                className="text-xs font-medium text-foreground block"
+              >
+                Excel File Name
+              </label>
+              <div className="relative">
+                <Input
+                  id="batch-excel-filename-input"
+                  value={excelFileName}
+                  onChange={(e) => setExcelFileName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !isProcessingBatch && excelFileName.trim()) {
+                      e.preventDefault();
+                      executePrintFlow(excelFileName);
+                    }
+                  }}
+                  placeholder="e.g. BJ_Print_Batch.xlsx"
+                  className="h-10 pr-16 font-mono text-xs"
+                  autoFocus
+                  disabled={isProcessingBatch}
+                />
+                <span className="absolute right-3 top-2.5 text-xs font-mono text-muted-foreground/60 select-none">
+                  .xlsx
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsNameModalOpen(false)}
+                disabled={isProcessingBatch}
+                className="text-xs h-9 cursor-pointer"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => executePrintFlow(excelFileName)}
+                disabled={isProcessingBatch || !excelFileName.trim()}
+                className="gap-2 text-xs h-9 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+              >
+                {isProcessingBatch ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Saving & Printing…
+                  </>
+                ) : (
+                  <>
+                    <Printer className="h-3.5 w-3.5" />
+                    Save, Download & Print
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
