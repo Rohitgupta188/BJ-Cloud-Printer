@@ -19,7 +19,22 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
     const Catalog = getCatalogModel(connection);
 
     const item = await Catalog.findOne(
-      { designNumber: { $regex: `^${dn.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&")}$`, $options: "i" } },
+      {
+        $or: [
+          {
+            designNumber: {
+              $regex: `^${dn.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&")}$`,
+              $options: "i",
+            },
+          },
+          {
+            imageName: {
+              $regex: `^${dn.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&")}\\.jpg$`,
+              $options: "i",
+            },
+          },
+        ],
+      },
       {
         sku: 1,
         designNumber: 1,

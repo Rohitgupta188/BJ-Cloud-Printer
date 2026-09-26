@@ -13,6 +13,7 @@ import { success, error, serverError } from "@/lib/api-handling/api-response";
 const QueryItemSchema = z.object({
   sku: z.string().trim().optional(),
   designNumber: z.string().trim().optional(),
+  imageName: z.string().trim().optional(),
 });
 
 const RequestSchema = z.object({
@@ -22,6 +23,7 @@ const RequestSchema = z.object({
 export interface LookupResultItem {
   sku?: string;
   designNumber?: string;
+  imageName?: string;
   prefix?: string;
   itemType?: string;
   grossWeight?: number;
@@ -71,6 +73,14 @@ export const POST = withAuth(async (request: NextRequest) => {
     )
   );
 
+  const imageNames = Array.from(
+    new Set(
+      queries
+        .map((q) => q.imageName?.trim())
+        .filter((i): i is string => !!i && i.length > 0)
+    )
+  );
+
   const resultMap: Record<string, LookupResultItem> = {};
 
   try {
@@ -95,6 +105,24 @@ export const POST = withAuth(async (request: NextRequest) => {
           $in: designNumbers.map((d) => new RegExp(`^${escapeRegex(d)}$`, "i")),
         },
       });
+      catalogConditions.push({
+        imageName: {
+          $in: designNumbers.flatMap((d) => [
+            new RegExp(`^${escapeRegex(d)}\\.jpg$`, "i"),
+            new RegExp(`^${escapeRegex(d)}$`, "i"),
+          ]),
+        },
+      });
+    }
+    if (imageNames.length > 0) {
+      catalogConditions.push({
+        imageName: {
+          $in: imageNames.flatMap((img) => [
+            new RegExp(`^${escapeRegex(img)}$`, "i"),
+            new RegExp(`^${escapeRegex(img.replace(/\.jpg$/i, ""))}\\.jpg$`, "i"),
+          ]),
+        },
+      });
     }
 
     if (catalogConditions.length > 0) {
@@ -103,6 +131,7 @@ export const POST = withAuth(async (request: NextRequest) => {
         {
           sku: 1,
           designNumber: 1,
+          imageName: 1,
           itemType: 1,
           grossWeight: 1,
           netWeight: 1,
@@ -121,6 +150,7 @@ export const POST = withAuth(async (request: NextRequest) => {
         const item: LookupResultItem = {
           sku: doc.sku ?? undefined,
           designNumber: doc.designNumber ?? undefined,
+          imageName: doc.imageName ?? (doc.designNumber ? `${doc.designNumber}.jpg` : undefined),
           itemType: doc.itemType ?? undefined,
           prefix: doc.itemType || (doc.sku ? doc.sku.replace(/\d+$/, "") : undefined),
           grossWeight: doc.grossWeight ?? undefined,
@@ -139,9 +169,18 @@ export const POST = withAuth(async (request: NextRequest) => {
           resultMap[`sku:${doc.sku.toUpperCase()}`] = item;
         }
         if (doc.designNumber) {
-          // If not already mapped by SKU, map by designNumber
           if (!resultMap[`dn:${doc.designNumber.toUpperCase()}`]) {
             resultMap[`dn:${doc.designNumber.toUpperCase()}`] = item;
+          }
+        }
+        if (doc.imageName) {
+          const lowerImg = doc.imageName.toLowerCase();
+          if (!resultMap[`img:${lowerImg}`]) {
+            resultMap[`img:${lowerImg}`] = item;
+          }
+          const dnFromImg = doc.imageName.replace(/\.jpg$/i, "").toUpperCase();
+          if (!resultMap[`dn:${dnFromImg}`]) {
+            resultMap[`dn:${dnFromImg}`] = item;
           }
         }
       }
