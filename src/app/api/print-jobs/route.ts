@@ -50,57 +50,62 @@ const CreatePrintJobSchema = z.object({
   metalPurity:    z.string().trim().optional(),
   collectionLine: z.string().trim().optional(),
   imageUrl:       z.string().trim().optional(),
+  czWeight:       z.union([z.string().trim(), z.number()]).optional(),
+  bsWeight:       z.union([z.string().trim(), z.number()]).optional(),
   reserved1:      z.string().trim().optional(),
   reserved3:      z.string().trim().optional(),
 });
 
-function buildZplPayload(sku: string, data: {
+function generateTsplPayload(item: {
+  skuNumber: string;
   designNumber?: string;
-  grossWeight?: number;
-  netWeight?: number;
-  stoneWeight?: number;
+  grossWeight?: string | number;
+  netWeight?: string | number;
+  stoneWeight?: string | number;
+  metalPurity?: string | number;
   metalType?: string;
-  metalPurity?: string;
-  reserved1?: string;
-  reserved3?: string;
+  czWeight?: string | number;
+  bsWeight?: string | number;
 }): string {
-  // Helper: format value with optional suffix, or empty string if absent
-  const f = (v: string | number | undefined, suffix = "") =>
-    v != null && v !== "" ? `${v}${suffix}` : "";
+  const dNo = item.designNumber ?? "";
+  const gWt = item.grossWeight !== undefined ? String(item.grossWeight) : "";
+  const nWt = item.netWeight !== undefined ? String(item.netWeight) : "";
+  const sWt = item.stoneWeight !== undefined ? String(item.stoneWeight) : "";
+  const czWt = item.czWeight !== undefined ? String(item.czWeight) : "";
+  const bsWt = item.bsWeight !== undefined ? String(item.bsWeight) : "";
+  const purity = item.metalPurity !== undefined ? String(item.metalPurity) : "";
+  const metal = item.metalType ?? "Y";
+  const sku = item.skuNumber ?? "";
 
-  // Label: 90 mm × 70 mm @ 300 dpi ≈ 1063 × 827 dots
-  // All fields rotated 180° (^FWI) to match original orientation.
-  return [
-    `^XA`,
-    `^PW1063`,                                          // label width  (90 mm)
-    `^LL0827`,                                          // label length (70 mm)
-    `^FWI`,                                             // rotate all fields 180°
-    `^CI28`,                                            // UTF-8 codepage
+  const lines = [
+    "SIZE 90 mm, 70 mm",
+    "DIRECTION 0,0",
+    "REFERENCE 0,0",
+    "OFFSET 0 mm",
+    "SET PEEL OFF",
+    "SET CUTTER OFF",
+    "SET PARTIAL_CUTTER OFF",
+    "SET TEAR ON",
+    "CLS",
+    "CODEPAGE 1252",
+    `TEXT 380,105,"ROMAN.TTF",180,1,6,"D.No: ${dNo}"`,
+    `TEXT 380,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
+    `TEXT 300,85,"ROMAN.TTF",180,1,6,"CZ: ${czWt}"`,
+    `TEXT 380,65,"ROMAN.TTF",180,1,6,"S Wt: ${sWt}"`,
+    `TEXT 380,45,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
+    `TEXT 300,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
+    `TEXT 300,65,"ROMAN.TTF",180,1,6,"BS: ${bsWt}"`,
+    `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
+    `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
+    `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
+    `TEXT 565,42,"0",180,9,9,"${dNo}/${gWt}"`,
+    `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
+    `TEXT 180,45,"ROMAN.TTF",180,1,6,"${metal}"`,
+    "PRINT 1,1",
+    ""
+  ];
 
-    // --- Right column: design/weight labels (mirrored from TSPL coords) ---
-    `^FO380,105^A0,25,25^FDD.No: ${f(data.designNumber)}^FS`,
-    `^FO380,85^A0,25,25^FDG.Wt: ${f(data.grossWeight, "g")}^FS`,
-    `^FO300,85^A0,25,25^FDCZ: ${f(data.reserved1)}^FS`,
-    `^FO380,65^A0,25,25^FDS Wt: ${f(data.stoneWeight, "g")}^FS`,
-    `^FO300,65^A0,25,25^FDBS: ${f(data.reserved3)}^FS`,
-    `^FO380,45^A0,25,25^FDN Wt: ${f(data.netWeight, "g")}^FS`,
-    `^FO300,45^A0,25,25^FDKT: ${f(data.metalPurity)}^FS`,
-
-    // --- QR Code ---
-    `^FO150,100^BQN,2,3^FDMM,A${sku}^FS`,
-
-    // --- Left column: duplicate weight + purity/metal ---
-    `^FO230,85^A0,25,25^FDG.Wt: ${f(data.grossWeight, "g")}^FS`,
-    `^FO230,65^A0,25,25^FDN Wt: ${f(data.netWeight, "g")}^FS`,
-    `^FO230,45^A0,25,25^FDKT: ${f(data.metalPurity)}^FS`,
-    `^FO180,45^A0,25,25^FD${f(data.metalType)}^FS`,
-
-    // --- Large design/weight header ---
-    `^FO565,42^A0,45,45^FD${f(data.designNumber)}/${f(data.grossWeight, "g")}^FS`,
-
-    `^PQ1,0,1,Y`,                                       // print 1 copy
-    `^XZ`,
-  ].join("\n");
+  return lines.join("\r\n");
 }
 
 
@@ -192,12 +197,14 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     metalPurity,
     collectionLine,
     imageUrl,
+    czWeight,
+    bsWeight,
     reserved1,
     reserved3,
   } = parsedBody.data;
 
   const printerId = process.env.MQTT_PRINTER_ID ?? "mumbai-01";
-  const payloadType = "ZPL" as const;
+  const payloadType = "TSPL" as const;
 
   try {
     const [catalogConn, printerConn] = await Promise.all([
@@ -213,15 +220,19 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     });
     console.log(`[print-jobs] New SKU generated: "${sku}" for user="${ctx.user.sub}"`);
 
-    const payload = buildZplPayload(sku, {
+    const effectiveCzWeight = czWeight ?? reserved1;
+    const effectiveBsWeight = bsWeight ?? reserved3;
+
+    const payload = generateTsplPayload({
+      skuNumber: sku,
       designNumber,
       grossWeight,
       netWeight,
       stoneWeight,
-      metalType,
       metalPurity,
-      reserved1,
-      reserved3,
+      metalType,
+      czWeight: effectiveCzWeight,
+      bsWeight: effectiveBsWeight,
     });
 
     const jobId = crypto.randomUUID();
@@ -244,8 +255,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       metalPurity,
       collectionLine,
       imageUrl,
-      reserved1,
-      reserved3,
+      reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
+      reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
     });
 
     console.log(`[print-jobs] Job saved: jobId="${jobId}" sku="${sku}" status="PENDING"`);
@@ -284,8 +295,8 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
             netWeight,
             stoneWeight,
             collectionLine,
-            reserved1,
-            reserved3,
+            reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
+            reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
             printerId,
             status:    "MQTT_PUBLISHED",
             createdAt: new Date(),
