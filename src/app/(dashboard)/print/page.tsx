@@ -768,18 +768,33 @@ function JobRow({
                     onChange={(e) =>
                       onChange(computeWeights(row, "grossWeight", e.target.value))
                     }
-                    className="h-10"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onKeyDown={(e) => {
+                      if (["ArrowUp", "ArrowDown", "e", "E", "+", "-"].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     disabled={done || isSubmitting}
                   />
                 </Field>
                 <Field label="CZ (Reserved 1)" id={id("reserved1")}>
                   <Input
                     id={id("reserved1")}
+                    type="number"
+                    step="0.001"
+                    min="0"
                     value={row.reserved1}
                     onChange={(e) =>
                       onChange(computeWeights(row, "reserved1", e.target.value))
                     }
-                    className="h-10"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onKeyDown={(e) => {
+                      if (["ArrowUp", "ArrowDown", "e", "E", "+", "-"].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -795,18 +810,28 @@ function JobRow({
                     min="0"
                     value={row.netWeight}
                     readOnly
-                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     tabIndex={-1}
                   />
                 </Field>
                 <Field label="BS (Reserved 3)" id={id("reserved3")}>
                   <Input
                     id={id("reserved3")}
+                    type="number"
+                    step="0.001"
+                    min="0"
                     value={row.reserved3}
                     onChange={(e) =>
                       onChange(computeWeights(row, "reserved3", e.target.value))
                     }
-                    className="h-10"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    onKeyDown={(e) => {
+                      if (["ArrowUp", "ArrowDown", "e", "E", "+", "-"].includes(e.key)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     disabled={done || isSubmitting}
                   />
                 </Field>
@@ -822,7 +847,8 @@ function JobRow({
                     min="0"
                     value={row.stoneWeight}
                     readOnly
-                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
+                    onWheel={(e) => e.currentTarget.blur()}
+                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     tabIndex={-1}
                   />
                 </Field>
@@ -961,6 +987,18 @@ export default function NewPrintJobPage() {
   // ── Batch Metal Defaults ─────────────────────────────────────────────────
   const [batchMetalType, setBatchMetalType] = useState("");
   const [batchMetalPurity, setBatchMetalPurity] = useState("");
+
+  // Prevent mouse wheel from inadvertently changing values in number inputs
+  useEffect(() => {
+    const handleWheel = () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && active.type === "number") {
+        active.blur();
+      }
+    };
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, []);
 
   function applyBatchMetalToAll() {
     const trimmedType = batchMetalType.trim();
@@ -1493,6 +1531,18 @@ export default function NewPrintJobPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-auto">
+      {/* Disable spinner buttons on number inputs across all browsers */}
+      <style>{`
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+          -webkit-appearance: none !important;
+          margin: 0 !important;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield !important;
+          appearance: textfield !important;
+        }
+      `}</style>
       {/* ── Header ── */}
       <div className="flex items-center gap-4 border-b border-border/50 bg-background/80 px-8 py-5 backdrop-blur-sm sticky top-0 z-10">
         <Button
