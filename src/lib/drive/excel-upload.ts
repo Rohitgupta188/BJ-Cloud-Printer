@@ -97,7 +97,7 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
       skuNumber:          rec.sku,
       designNumber:       rec.designNumber  ?? "",
       imageName:          rec.imageName     ?? (rec.designNumber ? `${rec.designNumber}.jpg` : ""),
-      itemStatus:         rec.itemStatus    ?? "INSTOCK",
+      itemStatus:         "INSTOCK",
       salesManName:       rec.salesManName  ?? "",
       itemType:           rec.itemType      ?? "",
       size:               rec.size          ?? "",
