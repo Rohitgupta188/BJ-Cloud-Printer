@@ -322,7 +322,7 @@ async function generateAndDownloadBatchExcel(
       skuNumber:          skuVal,
       designNumber:       row.designNumber || "",
       imageName:          row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : ""),
-      itemStatus:         row.itemStatus || "INSTOCK",
+      itemStatus:         "INSTOCK",
       salesManName:       "",
       itemType:           row.prefix || "",
       size:               "",
@@ -558,6 +558,8 @@ function JobRow({
 }) {
   const baseId = useId();
   const designTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rowRef = useRef(row);
+  rowRef.current = row;
 
   const fetchImage = useCallback(
     async (dn: string, imgName?: string) => {
@@ -574,41 +576,32 @@ function JobRow({
           `/api/catalog/design/${encodeURIComponent(lookup)}`
         );
         const data = await res.json();
+        const currentRow = rowRef.current;
+
         if (res.ok && data.data) {
           const item = data.data;
-          const r1 = item.reserved1 != null ? String(item.reserved1) : "";
-          const r3 = item.reserved3 != null ? String(item.reserved3) : "";
-          const gWt = item.grossWeight != null ? String(item.grossWeight) : "";
-          let sWt = item.stoneWeight != null ? String(item.stoneWeight) : "";
-          let nWt = item.netWeight != null ? String(item.netWeight) : "";
+          const r1 = item.reserved1 != null ? String(item.reserved1).trim() : "";
 
-          const r1Num = parseFloat(r1);
-          const r3Num = parseFloat(r3);
-          const hasR1 = !isNaN(r1Num);
-          const hasR3 = !isNaN(r3Num);
-          if ((!sWt || sWt === "0") && (hasR1 || hasR3)) {
-            sWt = roundWeight((hasR1 ? r1Num : 0) + (hasR3 ? r3Num : 0));
-          }
-          const sNum = parseFloat(sWt);
-          const gNum = parseFloat(gWt);
-          if ((!nWt || nWt === "0") && !isNaN(gNum) && !isNaN(sNum)) {
-            nWt = roundWeight(gNum - sNum);
-          }
-
-          onChange({
+          // ONLY CZ (Reserved 1) must be autofilled from DB - NOT grossWeight, netWeight,
+          // stoneWeight, metalType, metalPurity, collectionLine, or reserved3!
+          const patch: Partial<RowData> = {
             imageUrl: item.imageUrl,
             imageName:
               item.imageName ||
               (item.designNumber ? `${item.designNumber}.jpg` : imgName || `${lookup}.jpg`),
-            grossWeight: gWt,
-            netWeight: nWt,
-            stoneWeight: sWt,
-            metalType: item.metalType ?? "",
-            metalPurity: item.metalPurity ?? "",
-            collectionLine: item.collectionLine ?? "",
-            reserved1: r1,
-            reserved3: r3,
-          });
+          };
+
+          if (r1) {
+            patch.reserved1 = r1;
+            const weightPatch = computeWeights(
+              { ...currentRow, reserved1: r1 },
+              "reserved1",
+              r1
+            );
+            Object.assign(patch, weightPatch);
+          }
+
+          onChange(patch);
         } else {
           onChange({ imageUrl: undefined });
         }
@@ -1187,7 +1180,7 @@ export default function NewPrintJobPage() {
             prefix: effectivePrefix,
             designNumber: rawDesignNumber,
             imageName: effectiveImageName,
-            itemStatus: (rowValues.itemStatus || "INSTOCK").trim(),
+            itemStatus: "INSTOCK",
             grossWeight: (rowValues.grossWeight || "").trim(),
             netWeight: (rowValues.netWeight || "").trim(),
             stoneWeight: (rowValues.stoneWeight || "").trim(),
@@ -1255,27 +1248,22 @@ export default function NewPrintJobPage() {
 
                 if (!match) return r;
 
-                const gWt =
-                  r.grossWeight ||
-                  (match.grossWeight != null ? String(match.grossWeight) : "");
+                // Only CZ (Reserved 1) must be autofill from DB, not others!
                 const r1 = r.reserved1 || match.reserved1 || "";
-                const r3 = r.reserved3 || match.reserved3 || "";
-                let sWt =
-                  r.stoneWeight ||
-                  (match.stoneWeight != null ? String(match.stoneWeight) : "");
-                let nWt =
-                  r.netWeight ||
-                  (match.netWeight != null ? String(match.netWeight) : "");
+                let sWt = r.stoneWeight || "";
+                let nWt = r.netWeight || "";
 
+                // If CZ was autofilled and stone weight was not explicitly provided in Excel,
+                // compute stone weight and net weight based on this row's weights
                 const r1Num = parseFloat(r1);
-                const r3Num = parseFloat(r3);
+                const r3Num = parseFloat(r.reserved3);
                 const hasR1 = !isNaN(r1Num);
                 const hasR3 = !isNaN(r3Num);
                 if ((!sWt || sWt === "0") && (hasR1 || hasR3)) {
                   sWt = roundWeight((hasR1 ? r1Num : 0) + (hasR3 ? r3Num : 0));
                 }
                 const sNum = parseFloat(sWt);
-                const gNum = parseFloat(gWt);
+                const gNum = parseFloat(r.grossWeight);
                 if ((!nWt || nWt === "0") && !isNaN(gNum) && !isNaN(sNum)) {
                   nWt = roundWeight(gNum - sNum);
                 }
@@ -1287,16 +1275,9 @@ export default function NewPrintJobPage() {
                     r.imageName ||
                     match.imageName ||
                     (match.designNumber ? `${match.designNumber}.jpg` : ""),
-                  prefix: r.prefix || match.prefix || match.itemType || "",
-                  designNumber: r.designNumber || match.designNumber || "",
-                  grossWeight: gWt,
-                  netWeight: nWt,
-                  stoneWeight: sWt,
-                  metalType: r.metalType || match.metalType || "",
-                  metalPurity: r.metalPurity || match.metalPurity || "",
-                  collectionLine: r.collectionLine || match.collectionLine || "",
                   reserved1: r1,
-                  reserved3: r3,
+                  stoneWeight: sWt,
+                  netWeight: nWt,
                 };
               })
             );
@@ -1426,7 +1407,7 @@ export default function NewPrintJobPage() {
                 designNumber: row.designNumber || undefined,
                 imageName:
                   row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
-                itemStatus: row.itemStatus || "INSTOCK",
+                itemStatus: "INSTOCK",
                 grossWeight: row.grossWeight ? Number(row.grossWeight) : undefined,
                 netWeight: row.netWeight ? Number(row.netWeight) : undefined,
                 stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : undefined,
