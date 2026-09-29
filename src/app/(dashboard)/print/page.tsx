@@ -283,29 +283,29 @@ async function generateAndDownloadBatchExcel(
   const ws = wb.addWorksheet("Print Jobs");
 
   ws.columns = [
-    { header: "RFID Tag",              key: "rfidTag",            width: 18 },
-    { header: "SKU Number",            key: "skuNumber",          width: 18 },
-    { header: "Design Number",         key: "designNumber",       width: 18 },
-    { header: "Image Name",            key: "imageName",          width: 22 },
-    { header: "Item Status",           key: "itemStatus",         width: 14 },
-    { header: "Sales Man Name",        key: "salesManName",       width: 16 },
-    { header: "Item Type",             key: "itemType",           width: 14 },
-    { header: "Size",                  key: "size",               width: 10 },
-    { header: "Gross Weight",          key: "grossWeight",        width: 14 },
-    { header: "Net Weight",            key: "netWeight",          width: 14 },
-    { header: "Collection Line",       key: "collectionLine",     width: 18 },
-    { header: "Item Category",         key: "itemCategory",       width: 16 },
-    { header: "Metal Type",            key: "metalType",          width: 14 },
-    { header: "Metal Purity",          key: "metalPurity",        width: 14 },
-    { header: "Metal Weight",          key: "metalWeight",        width: 14 },
-    { header: "Total Diamond Weight",  key: "totalDiamondWeight", width: 20 },
-    { header: "Total Stone Weight",    key: "totalStoneWeight",   width: 18 },
-    { header: "Stone Weight",          key: "stoneWeight",        width: 14 },
-    { header: "Selling Price",         key: "sellingPrice",       width: 14 },
-    { header: "CZ Wt",                 key: "czWt",               width: 12 },
-    { header: "Reserved 2",            key: "reserved2",          width: 14 },
-    { header: "BS Wt",                 key: "bsWt",               width: 12 },
-    { header: "CS Wt",                 key: "csWt",               width: 12 },
+    { header: "RFID Tag", key: "rfidTag", width: 18 },
+    { header: "SKU Number", key: "skuNumber", width: 18 },
+    { header: "Design Number", key: "designNumber", width: 18 },
+    { header: "Image Name", key: "imageName", width: 22 },
+    { header: "Item Status", key: "itemStatus", width: 14 },
+    { header: "Sales Man Name", key: "salesManName", width: 16 },
+    { header: "Item Type", key: "itemType", width: 14 },
+    { header: "Size", key: "size", width: 10 },
+    { header: "Gross Weight", key: "grossWeight", width: 14 },
+    { header: "Net Weight", key: "netWeight", width: 14 },
+    { header: "Collection Line", key: "collectionLine", width: 18 },
+    { header: "Item Category", key: "itemCategory", width: 16 },
+    { header: "Metal Type", key: "metalType", width: 14 },
+    { header: "Metal Purity", key: "metalPurity", width: 14 },
+    { header: "Metal Weight", key: "metalWeight", width: 14 },
+    { header: "Total Diamond Weight", key: "totalDiamondWeight", width: 20 },
+    { header: "Total Stone Weight", key: "totalStoneWeight", width: 18 },
+    { header: "Stone Weight", key: "stoneWeight", width: 14 },
+    { header: "Selling Price", key: "sellingPrice", width: 14 },
+    { header: "CZ Wt", key: "czWt", width: 12 },
+    { header: "Reserved 2", key: "reserved2", width: 14 },
+    { header: "BS Wt", key: "bsWt", width: 12 },
+    { header: "CS Wt", key: "csWt", width: 12 },
   ];
 
   const headerRow = ws.getRow(1);
@@ -318,29 +318,29 @@ async function generateAndDownloadBatchExcel(
   entries.forEach(({ row, displaySku, result }) => {
     const skuVal = result?.status === "success" ? result.sku : displaySku || "";
     ws.addRow({
-      rfidTag:            skuVal,
-      skuNumber:          skuVal,
-      designNumber:       row.designNumber || "",
-      imageName:          row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : ""),
-      itemStatus:         "INSTOCK",
-      salesManName:       "",
-      itemType:           row.prefix || "",
-      size:               "",
-      grossWeight:        row.grossWeight ? Number(row.grossWeight) : "",
-      netWeight:          row.netWeight ? Number(row.netWeight) : "",
-      collectionLine:     row.collectionLine || "",
-      itemCategory:       "",
-      metalType:          row.metalType || "",
-      metalPurity:        row.metalPurity || "",
-      metalWeight:        row.netWeight ? Number(row.netWeight) : "",
+      rfidTag: skuVal,
+      skuNumber: skuVal,
+      designNumber: row.designNumber || "",
+      imageName: row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : ""),
+      itemStatus: "INSTOCK",
+      salesManName: "",
+      itemType: row.prefix || "",
+      size: "",
+      grossWeight: row.grossWeight ? Number(row.grossWeight) : "",
+      netWeight: row.netWeight ? Number(row.netWeight) : "",
+      collectionLine: row.collectionLine || "",
+      itemCategory: "",
+      metalType: row.metalType || "",
+      metalPurity: row.metalPurity || "",
+      metalWeight: row.netWeight ? Number(row.netWeight) : "",
       totalDiamondWeight: "",
-      totalStoneWeight:   row.stoneWeight ? Number(row.stoneWeight) : "",
-      stoneWeight:        row.stoneWeight ? Number(row.stoneWeight) : "",
-      sellingPrice:       "",
-      czWt:               row.reserved1 || "",
-      reserved2:          "",
-      bsWt:               row.reserved3 || "",
-      csWt:               "",
+      totalStoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
+      stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
+      sellingPrice: "",
+      czWt: row.reserved1 || "",
+      reserved2: "",
+      bsWt: row.reserved3 || "",
+      csWt: "",
     });
   });
 
@@ -383,29 +383,29 @@ async function downloadSampleExcelTemplate() {
   const ws = wb.addWorksheet("Import Template");
 
   ws.columns = [
-    { header: "RFID Tag",              key: "rfidTag",            width: 18 },
-    { header: "SKU Number",            key: "skuNumber",          width: 18 },
-    { header: "Design Number",         key: "designNumber",       width: 18 },
-    { header: "Image Name",            key: "imageName",          width: 22 },
-    { header: "Item Status",           key: "itemStatus",         width: 14 },
-    { header: "Sales Man Name",        key: "salesManName",       width: 16 },
-    { header: "Item Type",             key: "itemType",           width: 14 },
-    { header: "Size",                  key: "size",               width: 10 },
-    { header: "Gross Weight",          key: "grossWeight",        width: 14 },
-    { header: "Net Weight",            key: "netWeight",          width: 14 },
-    { header: "Collection Line",       key: "collectionLine",     width: 18 },
-    { header: "Item Category",         key: "itemCategory",       width: 16 },
-    { header: "Metal Type",            key: "metalType",          width: 14 },
-    { header: "Metal Purity",          key: "metalPurity",        width: 14 },
-    { header: "Metal Weight",          key: "metalWeight",        width: 14 },
-    { header: "Total Diamond Weight",  key: "totalDiamondWeight", width: 20 },
-    { header: "Total Stone Weight",    key: "totalStoneWeight",   width: 18 },
-    { header: "Stone Weight",          key: "stoneWeight",        width: 14 },
-    { header: "Selling Price",         key: "sellingPrice",       width: 14 },
-    { header: "CZ Wt",                 key: "czWt",               width: 12 },
-    { header: "Reserved 2",            key: "reserved2",          width: 14 },
-    { header: "BS Wt",                 key: "bsWt",               width: 12 },
-    { header: "CS Wt",                 key: "csWt",               width: 12 },
+    { header: "RFID Tag", key: "rfidTag", width: 18 },
+    { header: "SKU Number", key: "skuNumber", width: 18 },
+    { header: "Design Number", key: "designNumber", width: 18 },
+    { header: "Image Name", key: "imageName", width: 22 },
+    { header: "Item Status", key: "itemStatus", width: 14 },
+    { header: "Sales Man Name", key: "salesManName", width: 16 },
+    { header: "Item Type", key: "itemType", width: 14 },
+    { header: "Size", key: "size", width: 10 },
+    { header: "Gross Weight", key: "grossWeight", width: 14 },
+    { header: "Net Weight", key: "netWeight", width: 14 },
+    { header: "Collection Line", key: "collectionLine", width: 18 },
+    { header: "Item Category", key: "itemCategory", width: 16 },
+    { header: "Metal Type", key: "metalType", width: 14 },
+    { header: "Metal Purity", key: "metalPurity", width: 14 },
+    { header: "Metal Weight", key: "metalWeight", width: 14 },
+    { header: "Total Diamond Weight", key: "totalDiamondWeight", width: 20 },
+    { header: "Total Stone Weight", key: "totalStoneWeight", width: 18 },
+    { header: "Stone Weight", key: "stoneWeight", width: 14 },
+    { header: "Selling Price", key: "sellingPrice", width: 14 },
+    { header: "CZ Wt", key: "czWt", width: 12 },
+    { header: "Reserved 2", key: "reserved2", width: 14 },
+    { header: "BS Wt", key: "bsWt", width: 12 },
+    { header: "CS Wt", key: "csWt", width: 12 },
   ];
 
   const headerRow = ws.getRow(1);
@@ -417,56 +417,56 @@ async function downloadSampleExcelTemplate() {
 
   // Sample row 1
   ws.addRow({
-    rfidTag:            "RFID001",
-    skuNumber:          "DZSGR1001",
-    designNumber:       "DZSGR-6961",
-    imageName:          "DZSGR-6961.jpg",
-    itemStatus:         "INSTOCK",
-    salesManName:       "John",
-    itemType:           "DZSGR",
-    size:               "16",
-    grossWeight:        12.45,
-    netWeight:          12.074,
-    collectionLine:     "Bridal",
-    itemCategory:       "Ring",
-    metalType:          "R",
-    metalPurity:        "18K",
-    metalWeight:        12.074,
+    rfidTag: "RFID001",
+    skuNumber: "DZSGR1001",
+    designNumber: "DZSGR-6961",
+    imageName: "DZSGR-6961.jpg",
+    itemStatus: "INSTOCK",
+    salesManName: "John",
+    itemType: "DZSGR",
+    size: "16",
+    grossWeight: 12.45,
+    netWeight: 12.074,
+    collectionLine: "Bridal",
+    itemCategory: "Ring",
+    metalType: "R",
+    metalPurity: "18K",
+    metalWeight: 12.074,
     totalDiamondWeight: 0,
-    totalStoneWeight:   0.376,
-    stoneWeight:        0.376,
-    sellingPrice:       45000,
-    czWt:               "0.000",
-    reserved2:          "",
-    bsWt:               "0.376",
-    csWt:               "",
+    totalStoneWeight: 0.376,
+    stoneWeight: 0.376,
+    sellingPrice: 45000,
+    czWt: "0.000",
+    reserved2: "",
+    bsWt: "0.376",
+    csWt: "",
   });
 
   // Sample row 2
   ws.addRow({
-    rfidTag:            "RFID002",
-    skuNumber:          "DZMS1002",
-    designNumber:       "DZMS-2963",
-    imageName:          "DZMS-2963.jpg",
-    itemStatus:         "INSTOCK",
-    salesManName:       "Sarah",
-    itemType:           "DZMS",
-    size:               "14",
-    grossWeight:        1.641,
-    netWeight:          1.611,
-    collectionLine:     "Classic",
-    itemCategory:       "Pendant",
-    metalType:          "Y",
-    metalPurity:        "18K",
-    metalWeight:        1.611,
+    rfidTag: "RFID002",
+    skuNumber: "DZMS1002",
+    designNumber: "DZMS-2963",
+    imageName: "DZMS-2963.jpg",
+    itemStatus: "INSTOCK",
+    salesManName: "Sarah",
+    itemType: "DZMS",
+    size: "14",
+    grossWeight: 1.641,
+    netWeight: 1.611,
+    collectionLine: "Classic",
+    itemCategory: "Pendant",
+    metalType: "Y",
+    metalPurity: "18K",
+    metalWeight: 1.611,
     totalDiamondWeight: 0,
-    totalStoneWeight:   0.03,
-    stoneWeight:        0.03,
-    sellingPrice:       12500,
-    czWt:               "0.030",
-    reserved2:          "",
-    bsWt:               "0.000",
-    csWt:               "",
+    totalStoneWeight: 0.03,
+    stoneWeight: 0.03,
+    sellingPrice: 12500,
+    czWt: "0.030",
+    reserved2: "",
+    bsWt: "0.000",
+    csWt: "",
   });
 
   ws.eachRow((r, ri) => {
@@ -643,13 +643,12 @@ function JobRow({
 
   return (
     <Card
-      className={`border-border/40 overflow-hidden transition-all ${
-        result?.status === "success"
-          ? "border-emerald-500/30"
-          : result?.status === "error"
-            ? "border-destructive/30"
-            : ""
-      }`}
+      className={`border-border/40 overflow-hidden transition-all ${result?.status === "success"
+        ? "border-emerald-500/30"
+        : result?.status === "error"
+          ? "border-destructive/30"
+          : ""
+        }`}
     >
       {/* ── Row header ── */}
       <div
@@ -724,7 +723,6 @@ function JobRow({
                         prefix: e.target.value.toUpperCase(),
                       })
                     }
-                    placeholder="e.g. TRTP, RING"
                     className="h-10 font-mono uppercase tracking-widest"
                     maxLength={20}
                     disabled={done || isSubmitting}
@@ -737,7 +735,6 @@ function JobRow({
                       id={id("design")}
                       value={row.designNumber}
                       onChange={(e) => handleDesignChange(e.target.value)}
-                      placeholder="e.g. DZGR35196"
                       className="h-10"
                       disabled={done || isSubmitting}
                     />
@@ -752,7 +749,6 @@ function JobRow({
                     id={id("imageName")}
                     value={row.imageName || ""}
                     onChange={(e) => handleImageNameChange(e.target.value)}
-                    placeholder="e.g. DZGR35196.jpg"
                     className="h-10 font-mono text-xs"
                     disabled={done || isSubmitting}
                   />
@@ -761,7 +757,6 @@ function JobRow({
 
               <Separator className="opacity-30" />
 
-              {/* Row 2: Gross + Stone */}
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Gross Weight (g)" id={id("gross")}>
                   <Input
@@ -773,27 +768,24 @@ function JobRow({
                     onChange={(e) =>
                       onChange(computeWeights(row, "grossWeight", e.target.value))
                     }
-                    placeholder="0.000"
                     className="h-10"
                     disabled={done || isSubmitting}
                   />
                 </Field>
-                <Field label="Stone Weight (g)" id={id("stone")}>
+                <Field label="CZ (Reserved 1)" id={id("reserved1")}>
                   <Input
-                    id={id("stone")}
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={row.stoneWeight}
-                    readOnly
-                    placeholder="0.000"
-                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
-                    tabIndex={-1}
+                    id={id("reserved1")}
+                    value={row.reserved1}
+                    onChange={(e) =>
+                      onChange(computeWeights(row, "reserved1", e.target.value))
+                    }
+                    className="h-10"
+                    disabled={done || isSubmitting}
                   />
                 </Field>
+
               </div>
 
-              {/* Row 3: Net + Metal type */}
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Net Weight (g)" id={id("net")}>
                   <Input
@@ -803,7 +795,33 @@ function JobRow({
                     min="0"
                     value={row.netWeight}
                     readOnly
-                    placeholder="0.000"
+                    className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
+                    tabIndex={-1}
+                  />
+                </Field>
+                <Field label="BS (Reserved 3)" id={id("reserved3")}>
+                  <Input
+                    id={id("reserved3")}
+                    value={row.reserved3}
+                    onChange={(e) =>
+                      onChange(computeWeights(row, "reserved3", e.target.value))
+                    }
+                    className="h-10"
+                    disabled={done || isSubmitting}
+                  />
+                </Field>
+
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <Field label="Stone Weight (g)" id={id("stone")}>
+                  <Input
+                    id={id("stone")}
+                    type="number"
+                    step="0.001"
+                    min="0"
+                    value={row.stoneWeight}
+                    readOnly
                     className="h-10 bg-muted/40 cursor-not-allowed font-medium text-muted-foreground select-none"
                     tabIndex={-1}
                   />
@@ -815,14 +833,13 @@ function JobRow({
                     onChange={(e) =>
                       onChange({ metalType: e.target.value.toUpperCase() })
                     }
-                    placeholder="R, S, Y"
                     className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
                 </Field>
+
               </div>
 
-              {/* Row 4: Purity + Collection */}
               <div className="grid grid-cols-2 gap-4">
                 <Field label="Metal Purity" id={id("purity")}>
                   <Input
@@ -831,7 +848,6 @@ function JobRow({
                     onChange={(e) =>
                       onChange({ metalPurity: e.target.value.toUpperCase() })
                     }
-                    placeholder="18K, 22K, 9K"
                     className="h-10 font-mono uppercase"
                     disabled={done || isSubmitting}
                   />
@@ -841,39 +857,11 @@ function JobRow({
                     id={id("collection")}
                     value={row.collectionLine}
                     onChange={(e) => onChange({ collectionLine: e.target.value })}
-                    placeholder="Bridal, Classic…"
                     className="h-10"
                     disabled={done || isSubmitting}
                   />
                 </Field>
-              </div>
 
-              {/* Row 5: CZ (reserved1) + BS (reserved3) */}
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="CZ (Reserved 1)" id={id("reserved1")}>
-                  <Input
-                    id={id("reserved1")}
-                    value={row.reserved1}
-                    onChange={(e) =>
-                      onChange(computeWeights(row, "reserved1", e.target.value))
-                    }
-                    placeholder="e.g. 12"
-                    className="h-10"
-                    disabled={done || isSubmitting}
-                  />
-                </Field>
-                <Field label="BS (Reserved 3)" id={id("reserved3")}>
-                  <Input
-                    id={id("reserved3")}
-                    value={row.reserved3}
-                    onChange={(e) =>
-                      onChange(computeWeights(row, "reserved3", e.target.value))
-                    }
-                    placeholder="e.g. 5"
-                    className="h-10"
-                    disabled={done || isSubmitting}
-                  />
-                </Field>
               </div>
 
               {/* Success / error feedback */}
@@ -1288,8 +1276,7 @@ export default function NewPrintJobPage() {
       }
 
       toast.success(
-        `Successfully loaded ${parsedRows.length} item${
-          parsedRows.length > 1 ? "s" : ""
+        `Successfully loaded ${parsedRows.length} item${parsedRows.length > 1 ? "s" : ""
         } from Excel. New sequential SKUs will be assigned on print.`,
         { id: toastId }
       );
@@ -1585,11 +1572,10 @@ export default function NewPrintJobPage() {
             const file = e.dataTransfer.files?.[0];
             if (file) handleExcelUpload(file);
           }}
-          className={`relative rounded-xl border border-dashed transition-all p-4 ${
-            isDragging
-              ? "border-emerald-500 bg-emerald-500/10 scale-[1.005]"
-              : "border-border/60 bg-muted/10 hover:bg-muted/20"
-          }`}
+          className={`relative rounded-xl border border-dashed transition-all p-4 ${isDragging
+            ? "border-emerald-500 bg-emerald-500/10 scale-[1.005]"
+            : "border-border/60 bg-muted/10 hover:bg-muted/20"
+            }`}
         >
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
             <div className="flex items-center gap-3">
@@ -1724,11 +1710,10 @@ export default function NewPrintJobPage() {
                       setBatchMetalType(p.type);
                       setBatchMetalPurity(p.purity);
                     }}
-                    className={`rounded-md border px-2.5 py-1 text-xs font-mono font-medium transition-all cursor-pointer ${
-                      isSelected
-                        ? "border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold shadow-xs"
-                        : "border-border/40 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
-                    }`}
+                    className={`rounded-md border px-2.5 py-1 text-xs font-mono font-medium transition-all cursor-pointer ${isSelected
+                      ? "border-amber-500 bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold shadow-xs"
+                      : "border-border/40 bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
                     disabled={isPending}
                   >
                     {p.type} {p.purity}
@@ -1750,9 +1735,8 @@ export default function NewPrintJobPage() {
             <p className="flex-1 text-sm font-medium">
               {isPending
                 ? `Submitting… ${results.size} / ${rows.length}`
-                : `Done — ${successCount} of ${rows.length} job${
-                    rows.length > 1 ? "s" : ""
-                  } created`}
+                : `Done — ${successCount} of ${rows.length} job${rows.length > 1 ? "s" : ""
+                } created`}
             </p>
             {successCount > 0 && (
               <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
