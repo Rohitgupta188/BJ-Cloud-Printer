@@ -5,6 +5,7 @@ export const maxDuration = 60;
 import { z } from "zod";
 import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
+import { getCatalogModel } from "@/models/catalog/Catalog";
 import { connectToPrinterDb, getPrinterModels } from "@/lib/db/printer";
 import { generateSku } from "@/lib/sku/generate";
 import { rateLimit, validateCsrf, auditLog } from "@/lib/security";
@@ -285,7 +286,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       retryCount: 0,
       designNumber,
       imageName: effectiveImageName,
-      itemStatus: itemStatus || "INSTOCK",
+      itemStatus: "INSTOCK",
       grossWeight,
       netWeight: effectiveNetWeight,
       stoneWeight: effectiveStoneWeight,
@@ -298,6 +299,43 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     });
 
     console.log(`[print-jobs] Job saved: jobId="${jobId}" sku="${sku}" status="PENDING"`);
+
+    // Sync CZ (reserved1) to Catalog if designNumber and effectiveCzWeight are present
+    if (designNumber && effectiveCzWeight !== undefined && String(effectiveCzWeight).trim() !== "") {
+      const czStr = String(effectiveCzWeight).trim();
+      const escapedDn = designNumber.trim().replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
+      const Catalog = getCatalogModel(catalogConn.connection);
+      try {
+        const existing = await Catalog.findOne({
+          $or: [
+            { designNumber: { $regex: `^${escapedDn}$`, $options: "i" } },
+            { imageName: { $regex: `^${escapedDn}(\\.jpg)?$`, $options: "i" } },
+          ],
+        }).select({ reserved1: 1 }).lean();
+
+        if (!existing) {
+          // If not present in Catalog, insert only designNumber and reserved1
+          await Catalog.updateOne(
+            { designNumber: designNumber.trim() },
+            { $set: { designNumber: designNumber.trim(), reserved1: czStr } },
+            { upsert: true }
+          );
+        } else if (!existing.reserved1) {
+          // If present in Catalog but reserved1 is not present, update reserved1
+          await Catalog.updateMany(
+            {
+              $or: [
+                { designNumber: { $regex: `^${escapedDn}$`, $options: "i" } },
+                { imageName: { $regex: `^${escapedDn}(\\.jpg)?$`, $options: "i" } },
+              ],
+            },
+            { $set: { reserved1: czStr } }
+          );
+        }
+      } catch (czErr) {
+        console.error("[print-jobs] Failed to sync CZ to catalog:", czErr);
+      }
+    }
 
     let finalStatus: PrintJobStatus = "PENDING";
 
