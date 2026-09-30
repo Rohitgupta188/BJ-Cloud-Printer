@@ -37,6 +37,8 @@ import {
   Sparkles,
   Layers,
   X,
+  Save,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -83,6 +85,18 @@ interface CatalogBatchItem {
   imageUrl?: string;
   source?: "catalog" | "printJob";
 }
+
+export interface PrinterOption {
+  id: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+}
+
+const DEFAULT_PRINTERS: PrinterOption[] = [
+  { id: "mumbai-01", name: "Mumbai Printer 01", description: "Shop Floor — Station 01", isDefault: true },
+  { id: "mumbai-02", name: "Mumbai Printer 02", description: "Shop Floor — Station 02", isDefault: false },
+];
 
 // ── SKU helpers ────────────────────────────────────────────────────────────
 
@@ -266,8 +280,13 @@ function computeWeights(
   return { [field]: val };
 }
 
-function uid() {
-  return Math.random().toString(36).slice(2, 10);
+let rowCounter = 0;
+function uid(): string {
+  rowCounter += 1;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${crypto.randomUUID().slice(0, 8)}-${rowCounter}`;
+  }
+  return `row-${Date.now().toString(36)}-${rowCounter}`;
 }
 
 // ── Excel Export ───────────────────────────────────────────────────────────
@@ -522,12 +541,20 @@ function StatusBadge({ result }: { result: JobResult | null }) {
         <Clock className="mr-1 h-3 w-3" /> Pending
       </Badge>
     );
-  if (result.status === "success")
+  if (result.status === "success") {
+    if (result.mqttStatus === "PENDING") {
+      return (
+        <Badge className="text-[10px] bg-blue-500/15 text-blue-400 border-blue-500/25">
+          <Clock className="mr-1 h-3 w-3" /> Saved (Pending)
+        </Badge>
+      );
+    }
     return (
       <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
         <CheckCircle2 className="mr-1 h-3 w-3" /> {result.mqttStatus}
       </Badge>
     );
+  }
   return (
     <Badge variant="destructive" className="text-[10px]">
       <XCircle className="mr-1 h-3 w-3" /> Failed
@@ -665,11 +692,15 @@ function JobRow({
               {row.prefix}
             </span>
           )}
-          {displaySku && (
+          {result?.status === "success" && result.sku ? (
+            <span className="font-mono text-xs font-bold text-emerald-400">
+              → {result.sku}
+            </span>
+          ) : displaySku ? (
             <span className="font-mono text-xs font-medium text-primary">
               → {displaySku}
             </span>
-          )}
+          ) : null}
           {skuLoading && (
             <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
           )}
@@ -682,21 +713,20 @@ function JobRow({
 
         <StatusBadge result={result} />
 
-        {!done && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            disabled={isSubmitting}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          disabled={isSubmitting}
+          title="Remove item"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
 
         {row.expanded ? (
           <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -725,7 +755,7 @@ function JobRow({
                     }
                     className="h-10 font-mono uppercase tracking-widest"
                     maxLength={20}
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
 
@@ -736,7 +766,7 @@ function JobRow({
                       value={row.designNumber}
                       onChange={(e) => handleDesignChange(e.target.value)}
                       className="h-10"
-                      disabled={done || isSubmitting}
+                      disabled={isSubmitting}
                     />
                     {row.imageLoading && (
                       <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-muted-foreground" />
@@ -750,7 +780,7 @@ function JobRow({
                     value={row.imageName || ""}
                     onChange={(e) => handleImageNameChange(e.target.value)}
                     className="h-10 font-mono text-xs"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
               </div>
@@ -775,7 +805,7 @@ function JobRow({
                       }
                     }}
                     className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
                 <Field label="CZ (Reserved 1)" id={id("reserved1")}>
@@ -795,7 +825,7 @@ function JobRow({
                       }
                     }}
                     className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
 
@@ -832,7 +862,7 @@ function JobRow({
                       }
                     }}
                     className="h-10 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
 
@@ -860,7 +890,7 @@ function JobRow({
                       onChange({ metalType: e.target.value.toUpperCase() })
                     }
                     className="h-10 font-mono uppercase"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
 
@@ -875,7 +905,7 @@ function JobRow({
                       onChange({ metalPurity: e.target.value.toUpperCase() })
                     }
                     className="h-10 font-mono uppercase"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
                 <Field label="Collection Line" id={id("collection")}>
@@ -884,7 +914,7 @@ function JobRow({
                     value={row.collectionLine}
                     onChange={(e) => onChange({ collectionLine: e.target.value })}
                     className="h-10"
-                    disabled={done || isSubmitting}
+                    disabled={isSubmitting}
                   />
                 </Field>
 
@@ -973,16 +1003,92 @@ export default function NewPrintJobPage() {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [rows, setRows] = useState<RowData[]>(() => [makeRow(uid())]);
+  const [isMounted, setIsMounted] = useState(false);
+  const [rows, setRows] = useState<RowData[]>(() => [makeRow("init-row-1")]);
   const [results, setResults] = useState<Map<string, JobResult>>(new Map());
   const [submitted, setSubmitted] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSavingPending, setIsSavingPending] = useState(false);
+
+  // Load saved draft safely on client mount (prevents SSR hydration mismatch)
+  useEffect(() => {
+    setIsMounted(true);
+    try {
+      const saved = localStorage.getItem("bj_print_rows_draft");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRows(parsed);
+        }
+      }
+    } catch {
+      // ignore parsing error
+    }
+  }, []);
+
+  // Persist draft to localStorage only after component has mounted on client
+  useEffect(() => {
+    if (!isMounted) return;
+    try {
+      localStorage.setItem("bj_print_rows_draft", JSON.stringify(rows));
+    } catch {
+      // ignore quota error
+    }
+  }, [rows, isMounted]);
 
   // ── Excel Filename Modal & Print Flow ─────────────────────────────────────
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
   const [excelFileName, setExcelFileName] = useState("");
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+
+  // ── Multi-Printer Destination State ───────────────────────────────────────
+  const [printers, setPrinters] = useState<PrinterOption[]>(DEFAULT_PRINTERS);
+  const [selectedPrinterId, setSelectedPrinterId] = useState<string>("mumbai-01");
+  const [isPrinterDropdownOpen, setIsPrinterDropdownOpen] = useState(false);
+  const printerDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isPrinterDropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (printerDropdownRef.current && !printerDropdownRef.current.contains(e.target as Node)) {
+        setIsPrinterDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isPrinterDropdownOpen]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("bj_selected_printer_id");
+      if (saved) {
+        setSelectedPrinterId(saved);
+      }
+    } catch {}
+
+    authFetch("/api/printers")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.data?.printers && Array.isArray(data.data.printers) && data.data.printers.length > 0) {
+          setPrinters(data.data.printers);
+          setSelectedPrinterId((current) => {
+            const exists = data.data.printers.some((p: PrinterOption) => p.id === current);
+            if (exists) return current;
+            const def = data.data.printers.find((p: PrinterOption) => p.isDefault) || data.data.printers[0];
+            return def.id;
+          });
+        }
+      })
+      .catch((err) => console.error("Failed to load printers:", err));
+  }, []);
+
+  function handlePrinterChange(newPrinterId: string) {
+    setSelectedPrinterId(newPrinterId);
+    try {
+      localStorage.setItem("bj_selected_printer_id", newPrinterId);
+    } catch {}
+  }
 
   // ── Batch Metal Defaults ─────────────────────────────────────────────────
   const [batchMetalType, setBatchMetalType] = useState("");
@@ -1347,6 +1453,94 @@ export default function NewPrintJobPage() {
     return null;
   }
 
+  // ── Save Only (Store in Recent Jobs as PENDING without printing) ───────────
+
+  async function handleSaveOnly() {
+    const err = validateAll();
+    if (err) {
+      toast.error(err);
+      return;
+    }
+
+    setIsSavingPending(true);
+    const toastId = toast.loading(`Saving ${rows.length} job(s) to Recent Jobs…`);
+
+    try {
+      setSubmitted(true);
+      const newResults = new Map<string, JobResult>(results);
+
+      for (const row of rows) {
+        try {
+          const res = await authFetch("/api/print-jobs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...csrfHeaders() },
+            body: JSON.stringify({
+              printerId: selectedPrinterId,
+              prefix: row.prefix.trim().toUpperCase(),
+              designNumber: row.designNumber || undefined,
+              imageName:
+                row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
+              itemStatus: "INSTOCK",
+              grossWeight: row.grossWeight ? Number(row.grossWeight) : undefined,
+              netWeight: row.netWeight ? Number(row.netWeight) : undefined,
+              stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : undefined,
+              metalType: row.metalType || undefined,
+              metalPurity: row.metalPurity || undefined,
+              collectionLine: row.collectionLine || undefined,
+              imageUrl: row.imageUrl || undefined,
+              reserved1: row.reserved1 || undefined,
+              reserved3: row.reserved3 || undefined,
+              skipDriveUpload: true,
+              saveOnly: true,
+            }),
+          });
+
+          const data = await res.json();
+          if (!res.ok) {
+            newResults.set(row.id, {
+              status: "error",
+              sku: computeDisplaySku(rows.indexOf(row)),
+              message: data.error ?? "Server error",
+            });
+          } else {
+            const job = data.data.job;
+            newResults.set(row.id, {
+              status: "success",
+              sku: job.sku,
+              jobId: job.jobId,
+              mqttStatus: "PENDING",
+            });
+            setSkuCache((prev) => ({
+              ...prev,
+              [row.prefix.toUpperCase()]: job.sku,
+            }));
+          }
+        } catch {
+          newResults.set(row.id, {
+            status: "error",
+            sku: computeDisplaySku(rows.indexOf(row)),
+            message: "Network error",
+          });
+        }
+        setResults(new Map(newResults));
+      }
+
+      const ok = [...newResults.values()].filter((r) => r.status === "success").length;
+      if (ok > 0) {
+        toast.success(
+          `Saved ${ok} job(s) with status PENDING in Recent Jobs!`,
+          { id: toastId }
+        );
+      } else {
+        toast.error("Failed to save jobs.", { id: toastId });
+      }
+    } catch {
+      toast.error("Failed to save jobs.", { id: toastId });
+    } finally {
+      setIsSavingPending(false);
+    }
+  }
+
   // ── Print Flow: Prompt Filename -> Auto-Download -> Save to Drive -> Print to MQTT ──
 
   function handleSubmit() {
@@ -1428,6 +1622,7 @@ export default function NewPrintJobPage() {
               method: "POST",
               headers: { "Content-Type": "application/json", ...csrfHeaders() },
               body: JSON.stringify({
+                printerId: selectedPrinterId,
                 prefix: row.prefix.trim().toUpperCase(),
                 designNumber: row.designNumber || undefined,
                 imageName:
@@ -1509,13 +1704,34 @@ export default function NewPrintJobPage() {
     }
   }
 
-  // ── Reset ────────────────────────────────────────────────────────────────
+  // ── Reset / Clear ────────────────────────────────────────────────────────
 
-  function handleReset() {
+  function handleClearForm() {
+    const hasData =
+      rows.length > 1 ||
+      rows.some(
+        (r) =>
+          r.prefix.trim() ||
+          r.designNumber.trim() ||
+          r.grossWeight ||
+          r.imageName ||
+          r.collectionLine
+      );
+    if (hasData) {
+      const confirmed = window.confirm(
+        "Are you sure you want to clear all entered items and start fresh?"
+      );
+      if (!confirmed) return;
+    }
+
     setRows([makeRow(uid())]);
     setResults(new Map());
     setSkuCache({});
     setSubmitted(false);
+    try {
+      localStorage.removeItem("bj_print_rows_draft");
+    } catch {}
+    toast.success("Form cleared.");
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -1531,18 +1747,6 @@ export default function NewPrintJobPage() {
 
   return (
     <div className="flex-1 flex flex-col overflow-auto">
-      {/* Disable spinner buttons on number inputs across all browsers */}
-      <style>{`
-        input[type="number"]::-webkit-outer-spin-button,
-        input[type="number"]::-webkit-inner-spin-button {
-          -webkit-appearance: none !important;
-          margin: 0 !important;
-        }
-        input[type="number"] {
-          -moz-appearance: textfield !important;
-          appearance: textfield !important;
-        }
-      `}</style>
       {/* ── Header ── */}
       <div className="flex items-center gap-4 border-b border-border/50 bg-background/80 px-8 py-5 backdrop-blur-sm sticky top-0 z-10">
         <Button
@@ -1594,16 +1798,23 @@ export default function NewPrintJobPage() {
             </Button>
           )}
 
-          {allDone && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="shrink-0"
-            >
-              New Batch
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleClearForm}
+            className="shrink-0 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40"
+            title="Clear form and start a fresh batch"
+          >
+            Clear Form
+          </Button>
+
+          {/* Top Quick Active Printer Indicator */}
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md border border-border/60 bg-muted/30 text-xs text-muted-foreground">
+            <Printer className="h-3.5 w-3.5 text-primary shrink-0" />
+            <span className="font-medium text-foreground">
+              {printers.find((p) => p.id === selectedPrinterId)?.name || selectedPrinterId}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1828,85 +2039,161 @@ export default function NewPrintJobPage() {
 
       </div>
 
-      {/* ── Fixed Pinned Bottom Action Bar ── */}
-      <div className="sticky bottom-0 z-20 border-t border-border/50 bg-background/95 backdrop-blur-md px-8 py-3.5 shadow-lg">
-        <div className="max-w-6xl flex flex-wrap items-center justify-between gap-3">
-          {/* Left: Item Count, Add Item, Download Excel */}
-          <div className="flex items-center gap-3">
-            <span className="inline-flex items-center rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-foreground/80">
-              {rows.length} {rows.length === 1 ? "Item" : "Items"}
-            </span>
+      {/* ── Fixed Pinned Bottom Action Bar (Modern Elevated Dock) ── */}
+      <div className="sticky bottom-0 z-20 border-t border-border/40 bg-background/85 backdrop-blur-xl px-8 py-3 shadow-lg">
+        <div className="max-w-6xl flex items-center justify-between gap-4">
+          {/* Left: Item Counter & Row Controls */}
+          <div className="flex items-center gap-2">
+            {/* Items Counter Pill */}
+            <div className="flex items-center gap-1.5 px-3 h-9 rounded-xl bg-muted/60 border border-border/50 text-xs font-semibold text-foreground/80">
+              <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <span>{rows.length} {rows.length === 1 ? "Item" : "Items"}</span>
+            </div>
 
-            {!allDone && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5 border-dashed font-medium text-xs h-8"
-                onClick={addRow}
-                disabled={isPending}
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Item
-              </Button>
-            )}
+            {/* Add Item Button */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 px-3 gap-1.5 rounded-xl border-border/70 hover:bg-muted font-medium text-xs shadow-2xs transition-all"
+              onClick={addRow}
+              disabled={isPending}
+            >
+              <Plus className="h-3.5 w-3.5 text-primary" />
+              Add Item
+            </Button>
 
+            <div className="h-4 w-px bg-border/60 mx-1" />
+
+            {/* Download Excel */}
             {hasAnyPrefix && (
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="gap-1.5 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs h-8"
+                className="h-9 px-2.5 gap-1.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
                 onClick={handleExcel}
                 disabled={isPending}
+                title="Download current items as Excel spreadsheet"
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
-                Download Excel
+                <span>Export Excel</span>
               </Button>
             )}
+
+            {/* Clear Form */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9 px-2.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-xl transition-colors"
+              onClick={handleClearForm}
+              disabled={isPending}
+              title="Clear all rows and reset"
+            >
+              Clear
+            </Button>
           </div>
 
-          {/* Right: Done actions or Submit Print */}
-          <div className="flex items-center gap-2">
-            {allDone ? (
-              <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push("/dashboard")}
-                  className="h-9 text-xs"
-                >
-                  View All Jobs
-                </Button>
-                <Button
-                  size="sm"
-                  className="gap-1.5 h-9 text-xs"
-                  onClick={handleReset}
-                >
-                  <Printer className="h-3.5 w-3.5" />
-                  New Batch
-                </Button>
-              </>
-            ) : (
-              <Button
-                id="submit-batch-btn"
-                className="gap-2 min-w-40 font-semibold shadow-xs"
-                onClick={handleSubmit}
-                disabled={isPending || !hasAnyPrefix}
+          {/* Right: Printer Selector & Print Actions */}
+          <div className="flex items-center gap-2.5">
+            {/* Lucide React Style Destination Printer Dropdown */}
+            <div ref={printerDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setIsPrinterDropdownOpen((prev) => !prev)}
+                disabled={isPending || isSavingPending}
+                className="flex items-center gap-2 h-9 px-3 rounded-xl border border-input bg-background hover:bg-accent text-xs font-medium cursor-pointer transition-colors shadow-2xs focus:outline-hidden"
+                title="Select destination printer"
               >
-                {isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Printing {results.size + 1} / {rows.length}…
-                  </>
-                ) : (
-                  <>
-                    <Printer className="h-4 w-4" />
-                    Print {rows.length} Job{rows.length > 1 ? "s" : ""}
-                  </>
-                )}
-              </Button>
-            )}
+                <Printer className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="font-semibold text-foreground">
+                  {printers.find((p) => p.id === selectedPrinterId)?.name || selectedPrinterId}
+                </span>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-muted-foreground/70 shrink-0 transition-transform duration-200 ${
+                    isPrinterDropdownOpen ? "rotate-180 text-primary" : ""
+                  }`}
+                />
+              </button>
+
+              {isPrinterDropdownOpen && (
+                <div className="absolute bottom-full mb-1.5 right-0 min-w-44 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg z-50 animate-in fade-in-0 zoom-in-95 duration-100">
+                  {printers.map((p) => {
+                    const isSelected = p.id === selectedPrinterId;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          handlePrinterChange(p.id);
+                          setIsPrinterDropdownOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-accent text-accent-foreground font-semibold"
+                            : "hover:bg-muted/70 text-foreground"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Printer className="h-3 w-3 text-muted-foreground" />
+                          {p.name}
+                        </span>
+                        {isSelected && <Check className="h-3.5 w-3.5 text-primary stroke-[2.5]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Save Draft Button */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSaveOnly}
+              disabled={isPending || isSavingPending || !hasAnyPrefix}
+              className="h-9 px-3 gap-1.5 rounded-xl border-border/80 hover:bg-muted font-medium text-xs shadow-2xs transition-all"
+              title="Store jobs in Recent Jobs with status PENDING without printing"
+            >
+              {isSavingPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Save className="h-3.5 w-3.5 text-muted-foreground" />
+                  Save Draft
+                </>
+              )}
+            </Button>
+
+            {/* Primary Print Button */}
+            <Button
+              id="submit-batch-btn"
+              className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 min-w-36"
+              onClick={handleSubmit}
+              disabled={isPending || isSavingPending || !hasAnyPrefix}
+            >
+              {isPending ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Printing {results.size + 1} / {rows.length}…
+                </>
+              ) : allDone ? (
+                <>
+                  <Printer className="h-3.5 w-3.5" />
+                  Print Again ({rows.length})
+                </>
+              ) : (
+                <>
+                  <Printer className="h-3.5 w-3.5" />
+                  Print {rows.length} Job{rows.length > 1 ? "s" : ""}
+                </>
+              )}
+            </Button>
           </div>
         </div>
       </div>
@@ -1982,6 +2269,46 @@ export default function NewPrintJobPage() {
                   .xlsx
                 </span>
               </div>
+            </div>
+
+            {/* Destination Printer Selector inside Modal */}
+            <div className="space-y-1.5 rounded-xl border border-primary/20 bg-primary/5 p-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                  <Printer className="h-3.5 w-3.5 text-primary" />
+                  Target Printer Destination
+                </label>
+                <span className="text-[11px] font-mono text-primary font-medium">
+                  {selectedPrinterId}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                {printers.map((p) => {
+                  const isSelected = p.id === selectedPrinterId;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      disabled={isProcessingBatch}
+                      onClick={() => handlePrinterChange(p.id)}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-medium transition-all cursor-pointer ${
+                        isSelected
+                          ? "border-primary bg-background text-primary shadow-xs font-semibold"
+                          : "border-border/60 bg-background/50 hover:bg-background text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <Printer className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{p.name}</span>
+                      </span>
+                      {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 stroke-[2.5]" />}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Only the agent for this printer will receive and print this batch.
+              </p>
             </div>
 
             <div className="flex items-center justify-end gap-2.5 pt-1">
