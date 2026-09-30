@@ -88,21 +88,6 @@ function Sidebar() {
           );
         })}
       </nav>
-
-      <Separator className="opacity-40" />
-
-      {/* Station Status at bottom */}
-      <div className="p-3">
-        <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-muted/30 border border-border/30 text-[11px] text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-medium text-foreground/80">Station Ready</span>
-          </div>
-          <span className="font-mono text-[10px] text-muted-foreground/70 uppercase">
-            mumbai-01
-          </span>
-        </div>
-      </div>
     </aside>
   );
 }
