@@ -55,62 +55,15 @@ const CreatePrintJobSchema = z.object({
   imageUrl:       z.string().trim().optional(),
   czWeight:       z.union([z.string().trim(), z.number()]).optional(),
   bsWeight:       z.union([z.string().trim(), z.number()]).optional(),
-  reserved1:       z.string().trim().optional(),
-  reserved3:       z.string().trim().optional(),
+  reserved1:      z.string().trim().optional(),
+  reserved3:      z.string().trim().optional(),
+  printerId:      z.string().trim().optional(),
   skipDriveUpload: z.boolean().optional(),
+  saveOnly:       z.boolean().optional(),
 });
 
-function generateTsplPayload(item: {
-  skuNumber: string;
-  designNumber?: string;
-  grossWeight?: string | number;
-  netWeight?: string | number;
-  stoneWeight?: string | number;
-  metalPurity?: string | number;
-  metalType?: string;
-  czWeight?: string | number;
-  bsWeight?: string | number;
-}): string {
-  const dNo = item.designNumber ?? "";
-  const gWt = item.grossWeight !== undefined ? String(item.grossWeight) : "";
-  const nWt = item.netWeight !== undefined ? String(item.netWeight) : "";
-  const sWt = item.stoneWeight !== undefined ? String(item.stoneWeight) : "";
-  const czWt = item.czWeight !== undefined ? String(item.czWeight) : "";
-  const bsWt = item.bsWeight !== undefined ? String(item.bsWeight) : "";
-  const purity = item.metalPurity !== undefined ? String(item.metalPurity) : "";
-  const metal = item.metalType ?? "Y";
-  const sku = item.skuNumber ?? "";
-
-  const lines = [
-    "SIZE 90 mm, 70 mm",
-    "DIRECTION 0,0",
-    "REFERENCE 0,0",
-    "OFFSET 0 mm",
-    "SET PEEL OFF",
-    "SET CUTTER OFF",
-    "SET PARTIAL_CUTTER OFF",
-    "SET TEAR ON",
-    "CLS",
-    "CODEPAGE 1252",
-    `TEXT 380,105,"ROMAN.TTF",180,1,6,"D.No: ${dNo}"`,
-    `TEXT 380,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
-    `TEXT 300,85,"ROMAN.TTF",180,1,6,"CZ: ${czWt}"`,
-    `TEXT 380,65,"ROMAN.TTF",180,1,6,"S Wt: ${sWt}"`,
-    `TEXT 380,45,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
-    `TEXT 300,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
-    `TEXT 300,65,"ROMAN.TTF",180,1,6,"BS: ${bsWt}"`,
-    `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
-    `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
-    `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
-    `TEXT 565,42,"0",180,9,9,"${dNo}/${gWt}"`,
-    `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
-    `TEXT 180,45,"ROMAN.TTF",180,1,6,"${metal}"`,
-    "PRINT 1,1",
-    ""
-  ];
-
-  return lines.join("\r\n");
-}
+import { generateTsplPayload } from "@/lib/printer/tspl";
+import { getPrinterById, DEFAULT_PRINTER_ID } from "@/lib/printer/registry";
 
 
 export const GET = withAuth(async (request: NextRequest) => {
@@ -209,7 +162,16 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     reserved3,
   } = parsedBody.data;
 
-  const printerId = process.env.MQTT_PRINTER_ID ?? "mumbai-01";
+  const requestedPrinterId =
+    parsedBody.data.printerId || process.env.MQTT_PRINTER_ID || DEFAULT_PRINTER_ID;
+  const printerConfig = getPrinterById(requestedPrinterId);
+  if (!printerConfig) {
+    return error(
+      `Invalid or disabled printer "${requestedPrinterId}". Available printers can be viewed at /api/printers.`,
+      400
+    );
+  }
+  const printerId = printerConfig.id;
   const payloadType = "TSPL" as const;
 
   try {
@@ -278,6 +240,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     const job = await PrintJob.create({
       jobId,
       sku,
+      itemType: prefix,
       printerId,
       payloadType,
       payload,
@@ -335,6 +298,30 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       } catch (czErr) {
         console.error("[print-jobs] Failed to sync CZ to catalog:", czErr);
       }
+    }
+
+    if (parsedBody.data.saveOnly) {
+      console.log(`[print-jobs] saveOnly requested: jobId="${jobId}" sku="${sku}" saved as PENDING`);
+      return created({
+        job: {
+          jobId:         job.jobId,
+          sku:           job.sku,
+          itemType:      prefix,
+          printerId:     job.printerId,
+          payloadType:   job.payloadType,
+          status:        "PENDING",
+          createdAt:     job.createdAt,
+          designNumber:  job.designNumber,
+          grossWeight:   job.grossWeight,
+          netWeight:     job.netWeight,
+          stoneWeight:   job.stoneWeight,
+          metalType:     job.metalType,
+          metalPurity:   job.metalPurity,
+          collectionLine:job.collectionLine,
+          reserved1:     job.reserved1,
+          reserved3:     job.reserved3,
+        },
+      });
     }
 
     let finalStatus: PrintJobStatus = "PENDING";
