@@ -72,6 +72,10 @@ const PrintJobSchema = new Schema(
       required: true
     },
 
+    itemType: {
+      type: String,
+      trim: true,
+    },
     designNumber: {
       type: String, 
       trim: true
