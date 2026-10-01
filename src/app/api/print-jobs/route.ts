@@ -233,7 +233,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     });
 
     const jobId = crypto.randomUUID();
-    const { PrintJob } = await getPrinterModels();
+    const { PrintJob, DesignWeight } = await getPrinterModels();
 
     const effectiveImageName = imageName || (designNumber ? `${designNumber}.jpg` : undefined);
 
@@ -263,28 +263,49 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
 
     console.log(`[print-jobs] Job saved: jobId="${jobId}" sku="${sku}" status="PENDING"`);
 
-    // Sync CZ (reserved1) to Catalog if designNumber and effectiveCzWeight are present
+    // 1. Store CZ weight & design metadata in dedicated DesignWeight model (BJ-Printer DB)
     if (designNumber && effectiveCzWeight !== undefined && String(effectiveCzWeight).trim() !== "") {
       const czStr = String(effectiveCzWeight).trim();
-      const escapedDn = designNumber.trim().replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
-      const Catalog = getCatalogModel(catalogConn.connection);
+      const normDn = designNumber.trim().toUpperCase();
+
       try {
+        await DesignWeight.updateOne(
+          { designNumber: normDn },
+          {
+            $set: {
+              designNumber: normDn,
+              reserved1: czStr,
+              ...(effectiveBsWeight !== undefined && String(effectiveBsWeight).trim() !== ""
+                ? { reserved3: String(effectiveBsWeight).trim() }
+                : {}),
+              ...(grossWeight !== undefined ? { grossWeight } : {}),
+              ...(effectiveNetWeight !== undefined ? { netWeight: effectiveNetWeight } : {}),
+              ...(effectiveStoneWeight !== undefined ? { stoneWeight: effectiveStoneWeight } : {}),
+              ...(metalType ? { metalType } : {}),
+              ...(metalPurity ? { metalPurity } : {}),
+              ...(effectiveImageName ? { imageName: effectiveImageName } : {}),
+              ...(imageUrl ? { imageUrl } : {}),
+            },
+          },
+          { upsert: true }
+        );
+      } catch (dwErr) {
+        console.error("[print-jobs] Failed to save design weight in printer DB:", dwErr);
+      }
+
+      // 2. Update main catalog ONLY if the product and its full data already exists — never insert/upsert stub records
+      try {
+        const escapedDn = designNumber.trim().replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
+        const Catalog = getCatalogModel(catalogConn.connection);
         const existing = await Catalog.findOne({
           $or: [
             { designNumber: { $regex: `^${escapedDn}$`, $options: "i" } },
             { imageName: { $regex: `^${escapedDn}(\\.jpg)?$`, $options: "i" } },
           ],
-        }).select({ reserved1: 1 }).lean();
+        }).select({ reserved1: 1, sku: 1, itemStatus: 1 }).lean();
 
-        if (!existing) {
-          // If not present in Catalog, insert only designNumber and reserved1
-          await Catalog.updateOne(
-            { designNumber: designNumber.trim() },
-            { $set: { designNumber: designNumber.trim(), reserved1: czStr } },
-            { upsert: true }
-          );
-        } else if (!existing.reserved1) {
-          // If present in Catalog but reserved1 is not present, update reserved1
+        // Only update if existing full catalog item (not a stub) and reserved1 is not yet present
+        if (existing && (existing.sku || existing.itemStatus) && !existing.reserved1) {
           await Catalog.updateMany(
             {
               $or: [
@@ -296,7 +317,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
           );
         }
       } catch (czErr) {
-        console.error("[print-jobs] Failed to sync CZ to catalog:", czErr);
+        console.error("[print-jobs] Failed to update existing catalog item:", czErr);
       }
     }
 
