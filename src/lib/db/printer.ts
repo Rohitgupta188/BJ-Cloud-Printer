@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import { getPrintJobModel } from "@/models/printer/PrintJob";
 import { getPrinterSessionModel } from "@/models/printer/PrinterSession";
 import { getSkuSequenceModel } from "@/models/printer/SkuSequence";
+import { getDesignWeightModel } from "@/models/printer/DesignWeight";
 
 const PRINTER_MONGODB_URI = process.env.PRINTER_MONGODB_URI;
 
@@ -70,5 +71,8 @@ export async function getPrinterModels() {
     PrintJob: getPrintJobModel(connection),
     PrinterSession: getPrinterSessionModel(connection),
     SkuSequence: getSkuSequenceModel(connection),
+    DesignWeight: getDesignWeightModel(connection),
   };
 }
+
+export { getDesignWeightModel };
