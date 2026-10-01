@@ -56,7 +56,41 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
       item = await Catalog.findOne(query, projection).lean();
     }
 
-    // Fallback: If not found in Catalog or reserved1 is missing, check PrintJob history
+    // Check DesignWeight model in printer database (BJ-Printer)
+    if (!item || !item.reserved1) {
+      try {
+        const { connection: printerConn } = await connectToPrinterDb();
+        const { getDesignWeightModel } = await import("@/models/printer/DesignWeight");
+        const DesignWeight = getDesignWeightModel(printerConn);
+
+        const dw = await DesignWeight.findOne({
+          designNumber: dn.toUpperCase(),
+        }).lean();
+
+        if (dw) {
+          if (!item) {
+            item = {
+              designNumber: dw.designNumber,
+              imageName: dw.imageName || `${dw.designNumber}.jpg`,
+              imageUrl: dw.imageUrl,
+              reserved1: dw.reserved1,
+              reserved3: dw.reserved3,
+              grossWeight: dw.grossWeight,
+              netWeight: dw.netWeight,
+              stoneWeight: dw.stoneWeight,
+              metalType: dw.metalType,
+              metalPurity: dw.metalPurity,
+            } as any;
+          } else if (!item.reserved1 && dw.reserved1) {
+            item.reserved1 = dw.reserved1;
+          }
+        }
+      } catch (dwErr) {
+        console.error("[GET /api/catalog/design] Error checking DesignWeight:", dwErr);
+      }
+    }
+
+    // Fallback: If not found in Catalog or DesignWeight, check PrintJob history
     if (!item || !item.reserved1) {
       try {
         const { connection: printerConn } = await connectToPrinterDb();
