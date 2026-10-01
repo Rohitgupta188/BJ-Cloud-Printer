@@ -8,6 +8,7 @@ import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb } from "@/lib/db/printer";
 import { getCatalogModel } from "@/models/catalog/Catalog";
 import { getPrintJobModel } from "@/models/printer/PrintJob";
+import { getDesignWeightModel } from "@/models/printer/DesignWeight";
 import { success, error, serverError } from "@/lib/api-handling/api-response";
 
 const QueryItemSchema = z.object({
@@ -89,6 +90,7 @@ export const POST = withAuth(async (request: NextRequest) => {
 
     const Catalog = getCatalogModel(catalogConn);
     const PrintJob = getPrintJobModel(printerConn);
+    const DesignWeight = getDesignWeightModel(printerConn);
 
     // 1. Search in Catalog
     const catalogConditions: Record<string, unknown>[] = [];
@@ -186,7 +188,41 @@ export const POST = withAuth(async (request: NextRequest) => {
       }
     }
 
-    // 2. Identify missing items to look up in PrintJob history
+    // 2. Query DesignWeight for any designs missing from catalog or missing reserved1
+    const dnsNeedingWeight = designNumbers.filter(
+      (d) => !resultMap[`dn:${d.toUpperCase()}`] || !resultMap[`dn:${d.toUpperCase()}`].reserved1
+    );
+
+    if (dnsNeedingWeight.length > 0) {
+      const dwDocs = await DesignWeight.find({
+        designNumber: {
+          $in: dnsNeedingWeight.map((d) => new RegExp(`^${escapeRegex(d)}$`, "i")),
+        },
+      }).lean();
+
+      for (const dw of dwDocs) {
+        const dnKey = `dn:${dw.designNumber.toUpperCase()}`;
+        if (!resultMap[dnKey]) {
+          resultMap[dnKey] = {
+            designNumber: dw.designNumber,
+            imageName: dw.imageName || `${dw.designNumber}.jpg`,
+            grossWeight: dw.grossWeight ?? undefined,
+            netWeight: dw.netWeight ?? undefined,
+            stoneWeight: dw.stoneWeight ?? undefined,
+            metalType: dw.metalType ?? undefined,
+            metalPurity: dw.metalPurity ?? undefined,
+            reserved1: dw.reserved1 ? String(dw.reserved1) : undefined,
+            reserved3: dw.reserved3 ? String(dw.reserved3) : undefined,
+            imageUrl: dw.imageUrl ?? undefined,
+            source: "catalog",
+          };
+        } else if (!resultMap[dnKey].reserved1 && dw.reserved1) {
+          resultMap[dnKey].reserved1 = String(dw.reserved1);
+        }
+      }
+    }
+
+    // 3. Identify missing items to look up in PrintJob history
     const missingSkus = skus.filter((s) => !resultMap[`sku:${s.toUpperCase()}`]);
     const missingDns = designNumbers.filter(
       (d) => !resultMap[`dn:${d.toUpperCase()}`]
