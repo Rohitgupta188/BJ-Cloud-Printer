@@ -39,6 +39,7 @@ import {
   X,
   Save,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -1042,6 +1043,22 @@ export default function NewPrintJobPage() {
   const [excelFileName, setExcelFileName] = useState("");
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
+  // ── Clear Confirmation Modal ──────────────────────────────────────────────
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    if (!isClearModalOpen && !isNameModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isClearModalOpen) setIsClearModalOpen(false);
+        if (isNameModalOpen && !isProcessingBatch) setIsNameModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isClearModalOpen, isNameModalOpen, isProcessingBatch]);
+
   // ── Multi-Printer Destination State ───────────────────────────────────────
   const [printers, setPrinters] = useState<PrinterOption[]>(DEFAULT_PRINTERS);
   const [selectedPrinterId, setSelectedPrinterId] = useState<string>("mumbai-01");
@@ -1706,6 +1723,18 @@ export default function NewPrintJobPage() {
 
   // ── Reset / Clear ────────────────────────────────────────────────────────
 
+  function executeClearForm() {
+    setRows([makeRow(uid())]);
+    setResults(new Map());
+    setSkuCache({});
+    setSubmitted(false);
+    try {
+      localStorage.removeItem("bj_print_rows_draft");
+    } catch {}
+    setIsClearModalOpen(false);
+    toast.success("Form cleared.");
+  }
+
   function handleClearForm() {
     const hasData =
       rows.length > 1 ||
@@ -1718,20 +1747,11 @@ export default function NewPrintJobPage() {
           r.collectionLine
       );
     if (hasData) {
-      const confirmed = window.confirm(
-        "Are you sure you want to clear all entered items and start fresh?"
-      );
-      if (!confirmed) return;
+      setIsClearModalOpen(true);
+      return;
     }
 
-    setRows([makeRow(uid())]);
-    setResults(new Map());
-    setSkuCache({});
-    setSubmitted(false);
-    try {
-      localStorage.removeItem("bj_print_rows_draft");
-    } catch {}
-    toast.success("Form cleared.");
+    executeClearForm();
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────
@@ -1802,9 +1822,10 @@ export default function NewPrintJobPage() {
             variant="outline"
             size="sm"
             onClick={handleClearForm}
-            className="shrink-0 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40"
+            className="shrink-0 gap-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 cursor-pointer"
             title="Clear form and start a fresh batch"
           >
+            <Trash2 className="h-3.5 w-3.5" />
             Clear Form
           </Button>
 
@@ -2340,6 +2361,83 @@ export default function NewPrintJobPage() {
                     Save, Download & Print
                   </>
                 )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Clear Form Confirmation Modal ── */}
+      {isClearModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setIsClearModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-border/80 bg-card p-6 shadow-2xl space-y-5 animate-in zoom-in-95 duration-200"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="clear-modal-title"
+            aria-describedby="clear-modal-desc"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-destructive/15 text-destructive ring-8 ring-destructive/5 shrink-0">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 id="clear-modal-title" className="text-base font-semibold text-foreground">
+                    Clear All Items?
+                  </h3>
+                  <p id="clear-modal-desc" className="text-xs text-muted-foreground mt-0.5">
+                    Start a fresh print batch and reset all inputs
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsClearModalOpen(false)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-destructive/25 bg-destructive/5 p-3.5 space-y-2 text-xs">
+              <div className="flex items-center justify-between text-foreground">
+                <span className="font-semibold text-destructive flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  Unsaved changes will be lost
+                </span>
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-destructive/15 text-destructive">
+                  {rows.length} {rows.length === 1 ? "item" : "items"}
+                </span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                This will reset the form and remove all entered item rows, SKU assignments, weights, and image links. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsClearModalOpen(false)}
+                className="text-xs h-9 px-4 cursor-pointer"
+              >
+                Keep Editing
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={executeClearForm}
+                className="gap-2 text-xs h-9 px-4 font-semibold shadow-xs hover:shadow-destructive/20 transition-all cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Yes, Clear All
               </Button>
             </div>
           </div>
