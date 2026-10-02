@@ -301,44 +301,44 @@ export default function DashboardPage() {
   }
 
   // ── Action: Print Selected SKUs (Re-print return labels) ────────────────────
-  async function handlePrintSelected(jobIdsToPrint?: string[], targetPrinterId?: string) {
-    const ids = jobIdsToPrint ?? Array.from(selectedJobIds);
-    if (ids.length === 0) {
-      toast.error("Please select at least one SKU to print.");
-      return;
-    }
+  // async function handlePrintSelected(jobIdsToPrint?: string[], targetPrinterId?: string) {
+  //   const ids = jobIdsToPrint ?? Array.from(selectedJobIds);
+  //   if (ids.length === 0) {
+  //     toast.error("Please select at least one SKU to print.");
+  //     return;
+  //   }
 
-    const effectivePrinterId = targetPrinterId || reprintPrinterId;
+  //   const effectivePrinterId = targetPrinterId || reprintPrinterId;
 
-    setIsPrintingSelected(true);
-    const toastId = toast.loading(`Sending ${ids.length} job(s) to ${effectivePrinterId}…`);
+  //   setIsPrintingSelected(true);
+  //   const toastId = toast.loading(`Sending ${ids.length} job(s) to ${effectivePrinterId}…`);
 
-    try {
-      const res = await authFetch("/api/print-jobs/reprint", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...csrfHeaders() },
-        body: JSON.stringify({ jobIds: ids, printerId: effectivePrinterId }),
-      });
+  //   try {
+  //     const res = await authFetch("/api/print-jobs/reprint", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json", ...csrfHeaders() },
+  //       body: JSON.stringify({ jobIds: ids, printerId: effectivePrinterId }),
+  //     });
 
-      const json = await res.json();
-      if (!res.ok) {
-        toast.error(json.error || "Failed to print selected jobs", { id: toastId });
-        return;
-      }
+  //     const json = await res.json();
+  //     if (!res.ok) {
+  //       toast.error(json.error || "Failed to print selected jobs", { id: toastId });
+  //       return;
+  //     }
 
-      toast.success(
-        `Sent ${json.data.reprinted} SKU(s) to ${effectivePrinterId}!`,
-        { id: toastId }
-      );
+  //     toast.success(
+  //       `Sent ${json.data.reprinted} SKU(s) to ${effectivePrinterId}!`,
+  //       { id: toastId }
+  //     );
 
-      // Refresh job list to update status in table
-      fetchJobs();
-    } catch {
-      toast.error("Network error while trying to print.", { id: toastId });
-    } finally {
-      setIsPrintingSelected(false);
-    }
-  }
+  //     // Refresh job list to update status in table
+  //     fetchJobs();
+  //   } catch {
+  //     toast.error("Network error while trying to print.", { id: toastId });
+  //   } finally {
+  //     setIsPrintingSelected(false);
+  //   }
+  // }
 
   // ── Action: Download Selected SKUs as Excel ────────────────────────────────
   async function handleDownloadExcel(jobsToDownload?: PrintJob[]) {
@@ -642,9 +642,9 @@ export default function DashboardPage() {
                       <th className="w-[9.5%] px-4 py-3 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                         Created
                       </th>
-                      <th className="w-14 px-4 py-3 text-center text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+                      {/* <th className="w-14 px-4 py-3 text-center text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                         Actions
-                      </th>
+                      </th> */}
                     </tr>
                   </thead>
                   <tbody>
@@ -764,7 +764,7 @@ export default function DashboardPage() {
                             </span>
                           </td>
 
-                          {/* Actions: Quick Reprint */}
+                          {/* Actions: Quick Reprint
                           <td className="px-4 py-3.5 text-center whitespace-nowrap">
                             <div className="flex items-center justify-center">
                               <Button
@@ -780,7 +780,7 @@ export default function DashboardPage() {
                                 <Printer className="h-3.5 w-3.5" />
                               </Button>
                             </div>
-                          </td>
+                          </td> */}
                         </tr>
                       );
                     })}
@@ -825,7 +825,7 @@ export default function DashboardPage() {
             </Button>
 
             {/* Target Printer Dropdown */}
-            <div ref={printerDropdownRef} className="relative">
+            {/* <div ref={printerDropdownRef} className="relative">
               <button
                 type="button"
                 onClick={() => setIsPrinterDropdownOpen((prev) => !prev)}
@@ -875,10 +875,10 @@ export default function DashboardPage() {
                   })}
                 </div>
               )}
-            </div>
+            </div> */}
 
             {/* Print Selected Button */}
-            <Button
+            {/* <Button
               size="sm"
               onClick={() => handlePrintSelected()}
               disabled={isPrintingSelected}
@@ -890,7 +890,7 @@ export default function DashboardPage() {
                 <Printer className="h-3.5 w-3.5" />
               )}
               {isPrintingSelected ? "Sending…" : `Print Selected`}
-            </Button>
+            </Button> */}
 
             {/* Close Button */}
             <Button
