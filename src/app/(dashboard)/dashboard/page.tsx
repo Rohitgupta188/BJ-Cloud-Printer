@@ -400,9 +400,33 @@ export default function DashboardPage() {
       });
       headerRow.height = 24;
 
+      const parseWeightValue = (val: unknown): { value: number | string; numFmt?: string } => {
+        if (val === undefined || val === null || val === "") {
+          return { value: "" };
+        }
+        const s = String(val).trim();
+        if (s === "") {
+          return { value: "" };
+        }
+        const n = typeof val === "number" ? val : Number(s);
+        if (isNaN(n)) {
+          return { value: s };
+        }
+        const dot = s.indexOf(".");
+        const decimals = dot === -1 ? 0 : s.length - dot - 1;
+        const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0";
+        return { value: n, numFmt };
+      };
+
       targetJobs.forEach((job) => {
         const prefix = job.sku.includes("-") ? job.sku.split("-")[0] : "";
-        ws.addRow({
+        const gross  = parseWeightValue(job.grossWeight);
+        const net    = parseWeightValue(job.netWeight);
+        const stone  = parseWeightValue(job.stoneWeight);
+        const cz     = parseWeightValue(job.reserved1);
+        const bs     = parseWeightValue(job.reserved3);
+
+        const r = ws.addRow({
           rfidTag: job.sku,
           skuNumber: job.sku,
           designNumber: job.designNumber || "",
@@ -412,25 +436,33 @@ export default function DashboardPage() {
           salesManName: "",
           itemType: job.itemType || prefix,
           size: "",
-          grossWeight: job.grossWeight ?? "",
-          netWeight: job.netWeight ?? "",
+          grossWeight: gross.value,
+          netWeight: net.value,
           collectionLine: job.collectionLine || "",
           itemCategory: "",
           metalType: job.metalType || "",
           metalPurity: job.metalPurity || "",
-          metalWeight: job.netWeight ?? "",
+          metalWeight: net.value,
           totalDiamondWeight: "",
-          totalStoneWeight: job.stoneWeight ?? "",
-          stoneWeight: job.stoneWeight ?? "",
+          totalStoneWeight: stone.value,
+          stoneWeight: stone.value,
           sellingPrice: "",
-          czWt: job.reserved1 || "",
+          czWt: cz.value,
           reserved2: "",
-          bsWt: job.reserved3 || "",
+          bsWt: bs.value,
           csWt: "",
           printerId: job.printerId,
           status: job.status,
           createdAt: new Date(job.createdAt).toLocaleString(),
         });
+
+        if (gross.numFmt) r.getCell("grossWeight").numFmt = gross.numFmt;
+        if (net.numFmt)   r.getCell("netWeight").numFmt = net.numFmt;
+        if (net.numFmt)   r.getCell("metalWeight").numFmt = net.numFmt;
+        if (stone.numFmt) r.getCell("totalStoneWeight").numFmt = stone.numFmt;
+        if (stone.numFmt) r.getCell("stoneWeight").numFmt = stone.numFmt;
+        if (cz.numFmt)    r.getCell("czWt").numFmt = cz.numFmt;
+        if (bs.numFmt)    r.getCell("bsWt").numFmt = bs.numFmt;
       });
 
       ws.eachRow((r, ri) => {
