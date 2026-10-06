@@ -46,9 +46,9 @@ const CreatePrintJobSchema = z.object({
   designNumber:   z.string().trim().optional(),
   imageName:      z.string().trim().optional(),
   itemStatus:     z.string().trim().default("INSTOCK").optional(),
-  grossWeight:    z.number().min(0).optional(),
-  netWeight:      z.number().min(0).optional(),
-  stoneWeight:    z.number().min(0).optional(),
+  grossWeight:    z.union([z.number(), z.string().trim()]).optional(),
+  netWeight:      z.union([z.number(), z.string().trim()]).optional(),
+  stoneWeight:    z.union([z.number(), z.string().trim()]).optional(),
   metalType:      z.string().trim().optional(),
   metalPurity:    z.string().trim().optional(),
   collectionLine: z.string().trim().optional(),
@@ -64,6 +64,13 @@ const CreatePrintJobSchema = z.object({
 
 import { generateTsplPayload } from "@/lib/printer/tspl";
 import { getPrinterById, DEFAULT_PRINTER_ID } from "@/lib/printer/registry";
+
+function getDecimalCount(val: string | number | undefined | null): number {
+  if (val == null) return 0;
+  const s = String(val).trim();
+  const dot = s.indexOf(".");
+  return dot === -1 ? 0 : s.length - dot - 1;
+}
 
 
 export const GET = withAuth(async (request: NextRequest) => {
@@ -200,30 +207,70 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
         ? Number(effectiveBsWeight)
         : 0;
     const hasCz =
-      effectiveCzWeight !== undefined && !isNaN(Number(effectiveCzWeight));
+      effectiveCzWeight !== undefined &&
+      !isNaN(Number(effectiveCzWeight)) &&
+      String(effectiveCzWeight).trim() !== "";
     const hasBs =
-      effectiveBsWeight !== undefined && !isNaN(Number(effectiveBsWeight));
+      effectiveBsWeight !== undefined &&
+      !isNaN(Number(effectiveBsWeight)) &&
+      String(effectiveBsWeight).trim() !== "";
+
+    const grossNum =
+      grossWeight !== undefined && !isNaN(Number(grossWeight))
+        ? Number(grossWeight)
+        : undefined;
+
+    const stoneNum =
+      stoneWeight !== undefined && !isNaN(Number(stoneWeight))
+        ? Number(stoneWeight)
+        : undefined;
 
     const effectiveStoneWeight =
       stoneWeight !== undefined
         ? stoneWeight
-        : hasCz || hasBs
-          ? Math.round((czNum + bsNum) * 1000) / 1000
-          : undefined;
+        : hasCz && !hasBs
+          ? effectiveCzWeight
+          : !hasCz && hasBs
+            ? effectiveBsWeight
+            : hasCz && hasBs
+              ? (() => {
+                  const sDec = Math.max(
+                    getDecimalCount(effectiveCzWeight),
+                    getDecimalCount(effectiveBsWeight)
+                  );
+                  return (czNum + bsNum).toFixed(sDec);
+                })()
+              : undefined;
+
+    const stoneWeightVal =
+      effectiveStoneWeight !== undefined && !isNaN(Number(effectiveStoneWeight))
+        ? Number(effectiveStoneWeight)
+        : undefined;
 
     const effectiveNetWeight =
       netWeight !== undefined
         ? netWeight
-        : grossWeight !== undefined
-          ? effectiveStoneWeight !== undefined
-            ? Math.round((grossWeight - Number(effectiveStoneWeight)) * 1000) / 1000
+        : grossNum !== undefined
+          ? stoneWeightVal !== undefined && stoneWeightVal > 0
+            ? (() => {
+                const nDec = Math.max(
+                  getDecimalCount(grossWeight),
+                  getDecimalCount(effectiveStoneWeight)
+                );
+                return Math.max(0, grossNum - stoneWeightVal).toFixed(nDec);
+              })()
             : grossWeight
           : undefined;
+
+    const netNum =
+      effectiveNetWeight !== undefined && !isNaN(Number(effectiveNetWeight))
+        ? Number(effectiveNetWeight)
+        : undefined;
 
     const payload = generateTsplPayload({
       skuNumber: sku,
       designNumber,
-      grossWeight,
+      grossWeight: grossWeight ?? grossNum,
       netWeight: effectiveNetWeight,
       stoneWeight: effectiveStoneWeight,
       metalPurity,
@@ -250,9 +297,9 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       designNumber,
       imageName: effectiveImageName,
       itemStatus: "INSTOCK",
-      grossWeight,
-      netWeight: effectiveNetWeight,
-      stoneWeight: effectiveStoneWeight,
+      grossWeight: grossNum,
+      netWeight: netNum,
+      stoneWeight: stoneWeightVal,
       metalType,
       metalPurity,
       collectionLine,
@@ -278,9 +325,9 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
               ...(effectiveBsWeight !== undefined && String(effectiveBsWeight).trim() !== ""
                 ? { reserved3: String(effectiveBsWeight).trim() }
                 : {}),
-              ...(grossWeight !== undefined ? { grossWeight } : {}),
-              ...(effectiveNetWeight !== undefined ? { netWeight: effectiveNetWeight } : {}),
-              ...(effectiveStoneWeight !== undefined ? { stoneWeight: effectiveStoneWeight } : {}),
+              ...(grossNum !== undefined ? { grossWeight: grossNum } : {}),
+              ...(netNum !== undefined ? { netWeight: netNum } : {}),
+              ...(stoneWeightVal !== undefined ? { stoneWeight: stoneWeightVal } : {}),
               ...(metalType ? { metalType } : {}),
               ...(metalPurity ? { metalPurity } : {}),
               ...(effectiveImageName ? { imageName: effectiveImageName } : {}),
@@ -379,9 +426,9 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
               itemType: prefix,
               metalType,
               metalPurity,
-              grossWeight,
-              netWeight: effectiveNetWeight,
-              stoneWeight: effectiveStoneWeight,
+              grossWeight: grossNum,
+              netWeight: netNum,
+              stoneWeight: stoneWeightVal,
               collectionLine,
               reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
               reserved3: effectiveBsWeight !== undefined ? String(effectiveBsWeight) : undefined,
