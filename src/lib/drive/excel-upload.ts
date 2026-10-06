@@ -11,17 +11,17 @@ export interface PrintJobRecord {
   salesManName?:       string;
   itemType?:           string;
   size?:               string;
-  grossWeight?:        number;
-  netWeight?:          number;
+  grossWeight?:        number | string;
+  netWeight?:          number | string;
   collectionLine?:     string;
   itemCategory?:       string;
   metalType?:          string;
   metalPurity?:        string;
-  metalWeight?:        number;
-  totalDiamondWeight?: number;
-  totalStoneWeight?:   number;
-  stoneWeight?:        number;
-  sellingPrice?:       number;
+  metalWeight?:        number | string;
+  totalDiamondWeight?: number | string;
+  totalStoneWeight?:   number | string;
+  stoneWeight?:        number | string;
+  sellingPrice?:       number | string;
   reserved1?:          string;
   reserved2?:          string;
   reserved3?:          string;
@@ -92,6 +92,35 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
   headerRow.height = 22;
 
   records.forEach((rec) => {
+    const parseWeightValue = (val: unknown): { value: number | string; numFmt?: string } => {
+      if (val === undefined || val === null || val === "") {
+        return { value: "" };
+      }
+      const s = String(val).trim();
+      if (s === "") {
+        return { value: "" };
+      }
+      const n = typeof val === "number" ? val : Number(s);
+      if (isNaN(n)) {
+        return { value: s };
+      }
+      const dot = s.indexOf(".");
+      const decimals = dot === -1 ? 0 : s.length - dot - 1;
+      const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0";
+      return { value: n, numFmt };
+    };
+
+    const gross      = parseWeightValue(rec.grossWeight);
+    const net        = parseWeightValue(rec.netWeight);
+    const metal      = parseWeightValue(rec.metalWeight ?? rec.netWeight);
+    const diamond    = parseWeightValue(rec.totalDiamondWeight);
+    const totalStone = parseWeightValue(rec.totalStoneWeight ?? rec.stoneWeight);
+    const stone      = parseWeightValue(rec.stoneWeight);
+    const price      = parseWeightValue(rec.sellingPrice);
+    const cz         = parseWeightValue(rec.reserved1);
+    const bs         = parseWeightValue(rec.reserved3);
+    const cs         = parseWeightValue(rec.csWt);
+
     const row = sheet.addRow({
       rfidTag:            rec.rfid ?? rec.sku,
       skuNumber:          rec.sku,
@@ -101,30 +130,38 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
       salesManName:       rec.salesManName  ?? "",
       itemType:           rec.itemType      ?? "",
       size:               rec.size          ?? "",
-      grossWeight:        rec.grossWeight   ?? "",
-      netWeight:          rec.netWeight     ?? "",
+      grossWeight:        gross.value,
+      netWeight:          net.value,
       collectionLine:     rec.collectionLine ?? "",
       itemCategory:       rec.itemCategory  ?? "",
       metalType:          rec.metalType     ?? "",
       metalPurity:        rec.metalPurity   ?? "",
-      metalWeight:        rec.metalWeight   ?? rec.netWeight ?? "",
-      totalDiamondWeight: rec.totalDiamondWeight ?? "",
-      totalStoneWeight:   rec.totalStoneWeight ?? rec.stoneWeight ?? "",
-      stoneWeight:        rec.stoneWeight   ?? "",
-      sellingPrice:       rec.sellingPrice  ?? "",
-      czWt:               rec.reserved1     ?? "",
+      metalWeight:        metal.value,
+      totalDiamondWeight: diamond.value,
+      totalStoneWeight:   totalStone.value,
+      stoneWeight:        stone.value,
+      sellingPrice:       price.value,
+      czWt:               cz.value,
       reserved2:          rec.reserved2     ?? "",
-      bsWt:               rec.reserved3     ?? "",
-      csWt:               rec.csWt          ?? "",
+      bsWt:               bs.value,
+      csWt:               cs.value,
     });
 
-    row.eachCell((cell, colNumber) => {
+    row.eachCell((cell) => {
       cell.font      = { size: 10, name: "Calibri" };
       cell.alignment = { vertical: "middle", horizontal: "center" };
-      if ([9, 10, 15, 17, 18].includes(colNumber) && typeof cell.value === "number") {
-        cell.numFmt = "0.000";
-      }
     });
+
+    if (gross.numFmt)      row.getCell("grossWeight").numFmt = gross.numFmt;
+    if (net.numFmt)        row.getCell("netWeight").numFmt = net.numFmt;
+    if (metal.numFmt)      row.getCell("metalWeight").numFmt = metal.numFmt;
+    if (diamond.numFmt)    row.getCell("totalDiamondWeight").numFmt = diamond.numFmt;
+    if (totalStone.numFmt) row.getCell("totalStoneWeight").numFmt = totalStone.numFmt;
+    if (stone.numFmt)      row.getCell("stoneWeight").numFmt = stone.numFmt;
+    if (price.numFmt)      row.getCell("sellingPrice").numFmt = price.numFmt;
+    if (cz.numFmt)         row.getCell("czWt").numFmt = cz.numFmt;
+    if (bs.numFmt)         row.getCell("bsWt").numFmt = bs.numFmt;
+    if (cs.numFmt)         row.getCell("csWt").numFmt = cs.numFmt;
 
     row.height = 18;
   });
