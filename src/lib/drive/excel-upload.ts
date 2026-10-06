@@ -118,9 +118,12 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
       csWt:               rec.csWt          ?? "",
     });
 
-    row.eachCell((cell) => {
+    row.eachCell((cell, colNumber) => {
       cell.font      = { size: 10, name: "Calibri" };
       cell.alignment = { vertical: "middle", horizontal: "center" };
+      if ([9, 10, 15, 17, 18].includes(colNumber) && typeof cell.value === "number") {
+        cell.numFmt = "0.000";
+      }
     });
 
     row.height = 18;
@@ -148,7 +151,7 @@ export async function uploadExcelBufferToDrive(
   // If a Google Apps Script Web App URL is provided, upload directly via Apps Script.
   // This executes as the Google account owner (brahammand.jewels@gmail.com),
   // creating the file directly in the Exhibition Excel folder without Service Account 0 MB quota restrictions.
-  const appsScriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL;
+  const appsScriptUrl = process.env.GOOGLE_APPS_SCRIPT_URL?.trim().replace(/^["']+|["']+$/g, "");
   if (appsScriptUrl) {
     const res = await fetch(appsScriptUrl, {
       method: "POST",
