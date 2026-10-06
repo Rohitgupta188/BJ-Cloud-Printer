@@ -370,9 +370,33 @@ async function generateAndDownloadBatchExcel(
   });
   headerRow.height = 22;
 
+  const parseWeightValue = (val: unknown): { value: number | string; numFmt?: string } => {
+    if (val === undefined || val === null || val === "") {
+      return { value: "" };
+    }
+    const s = String(val).trim();
+    if (s === "") {
+      return { value: "" };
+    }
+    const n = typeof val === "number" ? val : Number(s);
+    if (isNaN(n)) {
+      return { value: s };
+    }
+    const dot = s.indexOf(".");
+    const decimals = dot === -1 ? 0 : s.length - dot - 1;
+    const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0";
+    return { value: n, numFmt };
+  };
+
   entries.forEach(({ row, displaySku, result }) => {
     const skuVal = result?.status === "success" ? result.sku : displaySku || "";
-    ws.addRow({
+    const gross  = parseWeightValue(row.grossWeight);
+    const net    = parseWeightValue(row.netWeight);
+    const stone  = parseWeightValue(row.stoneWeight);
+    const cz     = parseWeightValue(row.reserved1);
+    const bs     = parseWeightValue(row.reserved3);
+
+    const r = ws.addRow({
       rfidTag: skuVal,
       skuNumber: skuVal,
       designNumber: row.designNumber || "",
@@ -381,32 +405,37 @@ async function generateAndDownloadBatchExcel(
       salesManName: "",
       itemType: row.prefix || "",
       size: "",
-      grossWeight: row.grossWeight ? Number(row.grossWeight) : "",
-      netWeight: row.netWeight ? Number(row.netWeight) : "",
+      grossWeight: gross.value,
+      netWeight: net.value,
       collectionLine: row.collectionLine || "",
       itemCategory: "",
       metalType: row.metalType || "",
       metalPurity: row.metalPurity || "",
-      metalWeight: row.netWeight ? Number(row.netWeight) : "",
+      metalWeight: net.value,
       totalDiamondWeight: "",
-      totalStoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
-      stoneWeight: row.stoneWeight ? Number(row.stoneWeight) : "",
+      totalStoneWeight: stone.value,
+      stoneWeight: stone.value,
       sellingPrice: "",
-      czWt: row.reserved1 || "",
+      czWt: cz.value,
       reserved2: "",
-      bsWt: row.reserved3 || "",
+      bsWt: bs.value,
       csWt: "",
     });
+
+    if (gross.numFmt) r.getCell("grossWeight").numFmt = gross.numFmt;
+    if (net.numFmt)   r.getCell("netWeight").numFmt = net.numFmt;
+    if (net.numFmt)   r.getCell("metalWeight").numFmt = net.numFmt;
+    if (stone.numFmt) r.getCell("totalStoneWeight").numFmt = stone.numFmt;
+    if (stone.numFmt) r.getCell("stoneWeight").numFmt = stone.numFmt;
+    if (cz.numFmt)    r.getCell("czWt").numFmt = cz.numFmt;
+    if (bs.numFmt)    r.getCell("bsWt").numFmt = bs.numFmt;
   });
 
   ws.eachRow((r, ri) => {
     if (ri === 1) return;
     r.height = 18;
-    r.eachCell((cell, colNumber) => {
+    r.eachCell((cell) => {
       cell.alignment = { vertical: "middle", horizontal: "center" };
-      if ([9, 10, 15, 17, 18].includes(colNumber) && typeof cell.value === "number") {
-        cell.numFmt = "0.000";
-      }
     });
   });
 
