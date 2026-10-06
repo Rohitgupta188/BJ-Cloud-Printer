@@ -10,13 +10,19 @@ export interface TsplItemPayloadInput {
   bsWeight?: string | number;
 }
 
+function formatTsplWeight(val?: string | number): string {
+  if (val === undefined || val === null) return "";
+  const str = String(val).trim();
+  return str;
+}
+
 export function generateTsplPayload(item: TsplItemPayloadInput): string {
   const dNo = item.designNumber ?? "";
-  const gWt = item.grossWeight !== undefined && item.grossWeight !== null ? String(item.grossWeight) : "";
-  const nWt = item.netWeight !== undefined && item.netWeight !== null ? String(item.netWeight) : "";
-  const sWt = item.stoneWeight !== undefined && item.stoneWeight !== null ? String(item.stoneWeight) : "";
-  const czWt = item.czWeight !== undefined && item.czWeight !== null ? String(item.czWeight) : "";
-  const bsWt = item.bsWeight !== undefined && item.bsWeight !== null ? String(item.bsWeight) : "";
+  const gWt = formatTsplWeight(item.grossWeight);
+  const nWt = formatTsplWeight(item.netWeight);
+  const sWt = formatTsplWeight(item.stoneWeight);
+  const czWt = formatTsplWeight(item.czWeight);
+  const bsWt = formatTsplWeight(item.bsWeight);
   const purity = item.metalPurity !== undefined && item.metalPurity !== null ? String(item.metalPurity) : "";
   const metal = item.metalType ?? "Y";
   const sku = item.skuNumber ?? "";
