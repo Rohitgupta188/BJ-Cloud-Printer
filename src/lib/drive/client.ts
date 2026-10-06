@@ -33,7 +33,7 @@ export function getDriveClient() {
 }
 
 export function getDriveFolderId(): string {
-  const id = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  const id = process.env.GOOGLE_DRIVE_FOLDER_ID?.trim().replace(/^["']+|["']+$/g, "");
   if (!id) {
     throw new Error(
       "[drive/client] Missing GOOGLE_DRIVE_FOLDER_ID in environment."
@@ -46,8 +46,7 @@ export function getDriveFolderId(): string {
 // Folder ID for the Excel export destination ("EXHIBITION EXCEL" folder).
 
 export function getExcelFolderId(): string {
-  const id =
-    process.env.GOOGLE_DRIVE_EXCEL_FOLDER_ID
+  const id = process.env.GOOGLE_DRIVE_EXCEL_FOLDER_ID?.trim().replace(/^["']+|["']+$/g, "");
   if (!id) {
     throw new Error(
       "[drive/client] Missing GOOGLE_DRIVE_EXCEL_FOLDER_ID in environment."
