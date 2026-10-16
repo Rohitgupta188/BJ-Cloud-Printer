@@ -97,6 +97,7 @@ export interface PrinterOption {
 const DEFAULT_PRINTERS: PrinterOption[] = [
   { id: "mumbai-01", name: "Mumbai Printer 01", description: "Shop Floor — Station 01", isDefault: true },
   { id: "mumbai-02", name: "Mumbai Printer 02", description: "Shop Floor — Station 02", isDefault: false },
+  { id: "mumbai-03", name: "Mumbai Printer 03", description: "Shop Floor — Station 03", isDefault: false },
 ];
 
 // ── SKU helpers ────────────────────────────────────────────────────────────
