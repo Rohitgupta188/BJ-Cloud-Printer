@@ -291,6 +291,12 @@ export const POST = withAuth(async (request: NextRequest) => {
       }
     }
 
+    for (const val of Object.values(resultMap)) {
+      if (val && val.metalPurity) {
+        val.metalPurity = String(val.metalPurity).replace(/[kK\s]/g, "").replace(/T$/i, "");
+      }
+    }
+
     return success({ results: resultMap });
   } catch (err) {
     console.error("[POST /api/catalog/lookup-batch]", err);

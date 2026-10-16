@@ -169,6 +169,10 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
     reserved3,
   } = parsedBody.data;
 
+  const cleanMetalPurity = metalPurity
+    ? metalPurity.replace(/[kK\s]/g, "").replace(/T$/i, "")
+    : undefined;
+
   const requestedPrinterId =
     parsedBody.data.printerId || process.env.MQTT_PRINTER_ID || DEFAULT_PRINTER_ID;
   const printerConfig = getPrinterById(requestedPrinterId);
@@ -273,7 +277,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       grossWeight: grossWeight ?? grossNum,
       netWeight: effectiveNetWeight,
       stoneWeight: effectiveStoneWeight,
-      metalPurity,
+      metalPurity: cleanMetalPurity,
       metalType,
       czWeight: effectiveCzWeight,
       bsWeight: effectiveBsWeight,
@@ -301,7 +305,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       netWeight: netNum,
       stoneWeight: stoneWeightVal,
       metalType,
-      metalPurity,
+      metalPurity: cleanMetalPurity,
       collectionLine,
       imageUrl,
       reserved1: effectiveCzWeight !== undefined ? String(effectiveCzWeight) : undefined,
@@ -329,7 +333,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
               ...(netNum !== undefined ? { netWeight: netNum } : {}),
               ...(stoneWeightVal !== undefined ? { stoneWeight: stoneWeightVal } : {}),
               ...(metalType ? { metalType } : {}),
-              ...(metalPurity ? { metalPurity } : {}),
+              ...(cleanMetalPurity ? { metalPurity: cleanMetalPurity } : {}),
               ...(effectiveImageName ? { imageName: effectiveImageName } : {}),
               ...(imageUrl ? { imageUrl } : {}),
             },
@@ -425,7 +429,7 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
               itemStatus: "INSTOCK",
               itemType: prefix,
               metalType,
-              metalPurity,
+              metalPurity: cleanMetalPurity,
               grossWeight: grossWeight ?? grossNum,
               netWeight: effectiveNetWeight ?? netNum,
               stoneWeight: effectiveStoneWeight ?? stoneWeightVal,

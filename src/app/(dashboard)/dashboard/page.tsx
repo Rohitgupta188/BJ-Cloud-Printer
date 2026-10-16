@@ -442,7 +442,7 @@ export default function DashboardPage() {
           collectionLine: job.collectionLine || "",
           itemCategory: "",
           metalType: job.metalType || "",
-          metalPurity: job.metalPurity || "",
+          metalPurity: job.metalPurity ? String(job.metalPurity).replace(/[kK\s]/g, "").replace(/T$/i, "") : "",
           metalWeight: net.value,
           totalDiamondWeight: "",
           totalStoneWeight: stone.value,
@@ -755,7 +755,7 @@ export default function DashboardPage() {
                           <td className="px-4 py-3.5 text-left whitespace-nowrap">
                             {job.metalPurity ? (
                               <span className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium border border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300">
-                                {job.metalPurity}
+                                {job.metalPurity.replace(/[kK\s]/g, "").replace(/T$/i, "")}
                               </span>
                             ) : (
                               <span className="text-muted-foreground/30 text-xs">—</span>

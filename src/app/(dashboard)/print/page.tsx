@@ -421,7 +421,7 @@ async function generateAndDownloadBatchExcel(
       collectionLine: row.collectionLine || "",
       itemCategory: "",
       metalType: row.metalType || "",
-      metalPurity: row.metalPurity || "",
+      metalPurity: row.metalPurity ? row.metalPurity.replace(/[kK\s]/g, "").replace(/T$/i, "") : "",
       metalWeight: net.value,
       totalDiamondWeight: "",
       totalStoneWeight: stone.value,
@@ -528,7 +528,7 @@ async function downloadSampleExcelTemplate() {
     collectionLine: "Bridal",
     itemCategory: "Ring",
     metalType: "R",
-    metalPurity: "18K",
+    metalPurity: "18",
     metalWeight: 12.074,
     totalDiamondWeight: 0,
     totalStoneWeight: 0.376,
@@ -555,7 +555,7 @@ async function downloadSampleExcelTemplate() {
     collectionLine: "Classic",
     itemCategory: "Pendant",
     metalType: "Y",
-    metalPurity: "18K",
+    metalPurity: "18",
     metalWeight: 1.611,
     totalDiamondWeight: 0,
     totalStoneWeight: 0.03,
@@ -983,8 +983,14 @@ function JobRow({
                     id={id("purity")}
                     value={row.metalPurity}
                     onChange={(e) =>
-                      onChange({ metalPurity: e.target.value.toUpperCase() })
+                      onChange({
+                        metalPurity: e.target.value
+                          .toUpperCase()
+                          .replace(/[K\s]/g, "")
+                          .replace(/T$/i, ""),
+                      })
                     }
+                    placeholder="e.g. 18, 22, 9"
                     className="h-10 font-mono uppercase"
                     disabled={isSubmitting}
                   />
@@ -1205,7 +1211,7 @@ export default function NewPrintJobPage() {
 
   function applyBatchMetalToAll() {
     const trimmedType = batchMetalType.trim();
-    const trimmedPurity = batchMetalPurity.trim();
+    const trimmedPurity = batchMetalPurity.trim().replace(/[K\s]/g, "").replace(/T$/i, "");
 
     if (!trimmedType && !trimmedPurity) {
       toast.error("Please enter a Metal Type or Metal Purity to apply.");
@@ -1398,10 +1404,10 @@ export default function NewPrintJobPage() {
         const effectiveMetal = rawMetal || batchMetalType.trim();
 
         const rawPurity = (rowValues.metalPurity || "").trim().toUpperCase();
-        const normalizedPurity = /^\d+$/.test(rawPurity)
-          ? `${rawPurity}K`
-          : rawPurity;
-        const effectivePurity = normalizedPurity || batchMetalPurity.trim();
+        const normalizedPurity = rawPurity.replace(/[K\s]/g, "").replace(/T$/i, "");
+        const effectivePurity =
+          normalizedPurity ||
+          batchMetalPurity.trim().replace(/[K\s]/g, "").replace(/T$/i, "");
 
         parsedRows.push(
           makeRow(uid(), {
@@ -2030,9 +2036,14 @@ export default function NewPrintJobPage() {
                   <Input
                     value={batchMetalPurity}
                     onChange={(e) =>
-                      setBatchMetalPurity(e.target.value.toUpperCase())
+                      setBatchMetalPurity(
+                        e.target.value
+                          .toUpperCase()
+                          .replace(/[K\s]/g, "")
+                          .replace(/T$/i, "")
+                      )
                     }
-                    placeholder="Purity (18K, 22K, 9K)"
+                    placeholder="Purity (18, 22, 9)"
                     className="h-9 text-xs font-mono uppercase tracking-wider"
                     maxLength={10}
                     disabled={isPending}
@@ -2064,15 +2075,15 @@ export default function NewPrintJobPage() {
             </span>
             <div className="flex items-center gap-1.5 flex-wrap">
               {[
-                { type: "R", purity: "18K" },
-                { type: "S", purity: "18K" },
-                { type: "Y", purity: "18K" },
-                { type: "R", purity: "22K" },
-                { type: "Y", purity: "22K" },
-                { type: "S", purity: "22K" },
-                { type: "R", purity: "9K" },
-                { type: "Y", purity: "9K" },
-                { type: "S", purity: "9K" },
+                { type: "R", purity: "18" },
+                { type: "S", purity: "18" },
+                { type: "Y", purity: "18" },
+                { type: "R", purity: "22" },
+                { type: "Y", purity: "22" },
+                { type: "S", purity: "22" },
+                { type: "R", purity: "9" },
+                { type: "Y", purity: "9" },
+                { type: "S", purity: "9" },
               ].map((p) => {
                 const isSelected =
                   batchMetalType === p.type && batchMetalPurity === p.purity;

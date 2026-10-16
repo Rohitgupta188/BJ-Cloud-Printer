@@ -145,7 +145,7 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
       collectionLine:     rec.collectionLine ?? "",
       itemCategory:       rec.itemCategory  ?? "",
       metalType:          rec.metalType     ?? "",
-      metalPurity:        rec.metalPurity   ?? "",
+      metalPurity:        rec.metalPurity   ? String(rec.metalPurity).replace(/[kK\s]/g, "").replace(/T$/i, "") : "",
       metalWeight:        metal.value,
       totalDiamondWeight: diamond.value,
       totalStoneWeight:   totalStone.value,

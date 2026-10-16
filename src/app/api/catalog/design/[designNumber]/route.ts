@@ -130,6 +130,10 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
       return notFound("Design number not found");
     }
 
+    if ((item as any).metalPurity) {
+      (item as any).metalPurity = String((item as any).metalPurity).replace(/[kK\s]/g, "").replace(/T$/i, "");
+    }
+
     return success(item);
   } catch (err) {
     console.error("[GET /api/catalog/design]", err);
