@@ -195,6 +195,7 @@ export default function DashboardPage() {
   const [printers, setPrinters] = useState<{ id: string; name: string; isDefault?: boolean }[]>([
     { id: "mumbai-01", name: "Mumbai Printer 01", isDefault: true },
     { id: "mumbai-02", name: "Mumbai Printer 02", isDefault: false },
+    { id: "mumbai-03", name: "Mumbai Printer 03", isDefault: false },
   ]);
   const [reprintPrinterId, setReprintPrinterId] = useState<string>("mumbai-01");
   const [isPrinterDropdownOpen, setIsPrinterDropdownOpen] = useState(false);
