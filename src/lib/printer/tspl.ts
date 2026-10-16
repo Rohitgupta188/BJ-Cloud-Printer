@@ -25,7 +25,10 @@ export function generateTsplPayload(item: TsplItemPayloadInput): string {
   const bsWt = formatTsplWeight(item.bsWeight, "0.000");
   const purity = item.metalPurity !== undefined && item.metalPurity !== null ? String(item.metalPurity) : "";
   const metal = item.metalType ?? "Y";
-  const sku = item.skuNumber ?? "";
+  // Prefix '1' to every SKU for the physical printer label QR code (e.g. 1TRTP250)
+  // while leaving database and website SKUs unchanged.
+  const rawSku = (item.skuNumber ?? "").trim();
+  const sku = rawSku ? (rawSku.startsWith("1") ? rawSku : `1${rawSku}`) : "";
 
   const lines = [
     "SIZE 90 mm, 70 mm",

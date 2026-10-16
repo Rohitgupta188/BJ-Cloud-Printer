@@ -102,6 +102,16 @@ const DEFAULT_PRINTERS: PrinterOption[] = [
 // ── SKU helpers ────────────────────────────────────────────────────────────
 
 /**
+ * Format a SKU for the printer UI preview and physical label (prefixes '1' if not already present).
+ */
+function formatPrinterSku(sku?: string): string {
+  if (!sku) return "";
+  const s = sku.trim();
+  if (!s) return "";
+  return s.startsWith("1") ? s : `1${s}`;
+}
+
+/**
  * Given a base SKU like "TRTP5614" and an offset, returns "TRTP5615", "TRTP5616" etc.
  * Preserves zero-padding width.
  */
@@ -389,7 +399,8 @@ async function generateAndDownloadBatchExcel(
   };
 
   entries.forEach(({ row, displaySku, result }) => {
-    const skuVal = result?.status === "success" ? result.sku : displaySku || "";
+    const rawSku = result?.status === "success" ? result.sku : displaySku || "";
+    const skuVal = formatPrinterSku(rawSku);
     const gross  = parseWeightValue(row.grossWeight);
     const net    = parseWeightValue(row.netWeight);
     const stone  = parseWeightValue(row.stoneWeight);
@@ -656,6 +667,10 @@ function JobRow({
   const rowRef = useRef(row);
   rowRef.current = row;
 
+  const previewSkuToDisplay = formatPrinterSku(displaySku);
+  const successSkuToDisplay =
+    result?.status === "success" && result.sku ? formatPrinterSku(result.sku) : "";
+
   const fetchImage = useCallback(
     async (dn: string, imgName?: string) => {
       const trimmed = dn.trim();
@@ -760,13 +775,13 @@ function JobRow({
               {row.prefix}
             </span>
           )}
-          {result?.status === "success" && result.sku ? (
+          {successSkuToDisplay ? (
             <span className="font-mono text-xs font-bold text-emerald-400">
-              → {result.sku}
+              → {successSkuToDisplay}
             </span>
-          ) : displaySku ? (
+          ) : previewSkuToDisplay ? (
             <span className="font-mono text-xs font-medium text-primary">
-              → {displaySku}
+              → {previewSkuToDisplay}
             </span>
           ) : null}
           {skuLoading && (
@@ -992,7 +1007,7 @@ function JobRow({
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                   <div className="min-w-0">
                     <p className="font-mono text-sm font-bold text-emerald-400">
-                      {result.sku}
+                      {successSkuToDisplay}
                     </p>
                     <p className="text-[10px] text-muted-foreground truncate">
                       {result.jobId}
@@ -1011,7 +1026,7 @@ function JobRow({
             {/* ── Right: image panel (1/3 width) ── */}
             <div className="lg:col-span-1 flex flex-col gap-3">
               {/* SKU preview box — Always shows the newly assigned sequence SKU */}
-              {(displaySku || skuLoading) && (
+              {(previewSkuToDisplay || skuLoading) && (
                 <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-center transition-all">
                   <p className="text-[10px] text-muted-foreground mb-1">
                     New SKU to Assign
@@ -1020,7 +1035,7 @@ function JobRow({
                     <Loader2 className="h-5 w-5 animate-spin text-primary mx-auto" />
                   ) : (
                     <p className="font-mono text-xl font-bold tracking-wider text-primary">
-                      {displaySku}
+                      {previewSkuToDisplay}
                     </p>
                   )}
                   <p className="text-[9px] text-muted-foreground/60 mt-1">

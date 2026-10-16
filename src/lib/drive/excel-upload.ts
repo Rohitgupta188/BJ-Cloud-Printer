@@ -121,9 +121,19 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
     const bs         = parseWeightValue(rec.reserved3);
     const cs         = parseWeightValue(rec.csWt);
 
+    const formatExcelSku = (val?: string | null): string => {
+      if (!val) return "";
+      const s = String(val).trim();
+      if (!s) return "";
+      return s.startsWith("1") ? s : `1${s}`;
+    };
+
+    const formattedSku = formatExcelSku(rec.sku);
+    const formattedRfid = formatExcelSku(rec.rfid ?? rec.sku);
+
     const row = sheet.addRow({
-      rfidTag:            rec.rfid ?? rec.sku,
-      skuNumber:          rec.sku,
+      rfidTag:            formattedRfid,
+      skuNumber:          formattedSku,
       designNumber:       rec.designNumber  ?? "",
       imageName:          rec.imageName     ?? (rec.designNumber ? `${rec.designNumber}.jpg` : ""),
       itemStatus:         "INSTOCK",

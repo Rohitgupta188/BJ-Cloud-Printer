@@ -420,6 +420,7 @@ export default function DashboardPage() {
 
       targetJobs.forEach((job) => {
         const prefix = job.sku.includes("-") ? job.sku.split("-")[0] : "";
+        const formattedSku = job.sku ? (job.sku.startsWith("1") ? job.sku : `1${job.sku}`) : "";
         const gross  = parseWeightValue(job.grossWeight);
         const net    = parseWeightValue(job.netWeight);
         const stone  = parseWeightValue(job.stoneWeight);
@@ -427,8 +428,8 @@ export default function DashboardPage() {
         const bs     = parseWeightValue(job.reserved3);
 
         const r = ws.addRow({
-          rfidTag: job.sku,
-          skuNumber: job.sku,
+          rfidTag: formattedSku,
+          skuNumber: formattedSku,
           designNumber: job.designNumber || "",
           imageName:
             job.imageName || (job.designNumber ? `${job.designNumber}.jpg` : ""),
