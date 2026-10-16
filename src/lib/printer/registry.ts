@@ -54,6 +54,14 @@ export const PRINTER_REGISTRY: Record<string, PrinterConfig> = {
     enabled: true,
     isDefault: false,
   },
+  "mumbai-03": {
+    id: "mumbai-03",
+    name: "Mumbai Printer 03",
+    description: "Shop Floor — Station 03 (TSC-TTP-244 Pro)",
+    topic: "printers/mumbai-03/jobs",
+    enabled: true,
+    isDefault: false,
+  },
 };
 
 export const DEFAULT_PRINTER_ID = "mumbai-01";
