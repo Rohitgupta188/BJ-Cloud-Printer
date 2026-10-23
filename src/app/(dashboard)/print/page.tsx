@@ -1579,77 +1579,75 @@ export default function NewPrintJobPage() {
     }
 
     setIsSavingPending(true);
-    const toastId = toast.loading(`Saving ${rows.length} job(s) to Recent Jobs…`);
+    const toastId = toast.loading(`Saving ${rows.length} job(s) to Recent Jobs...`);
 
     try {
       setSubmitted(true);
       const newResults = new Map<string, JobResult>(results);
 
-      for (const row of rows) {
-        try {
-          const res = await authFetch("/api/print-jobs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...csrfHeaders() },
-            body: JSON.stringify({
-              printerId: selectedPrinterId,
-              prefix: row.prefix.trim().toUpperCase(),
-              designNumber: row.designNumber || undefined,
-              imageName:
-                row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
-              itemStatus: "INSTOCK",
-              grossWeight: row.grossWeight || undefined,
-              netWeight: row.netWeight || undefined,
-              stoneWeight: row.stoneWeight || undefined,
-              metalType: row.metalType || undefined,
-              metalPurity: row.metalPurity || undefined,
-              collectionLine: row.collectionLine || undefined,
-              imageUrl: row.imageUrl || undefined,
-              reserved1: row.reserved1 || undefined,
-              reserved3: row.reserved3 || undefined,
-              skipDriveUpload: true,
-              saveOnly: true,
-            }),
-          });
+      const res = await authFetch("/api/print-jobs/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({
+          printerId: selectedPrinterId,
+          skipDriveUpload: true,
+          saveOnly: true,
+          items: rows.map((row) => ({
+            rowId: row.id,
+            prefix: row.prefix.trim().toUpperCase(),
+            designNumber: row.designNumber || undefined,
+            imageName:
+              row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
+            itemStatus: "INSTOCK",
+            grossWeight: row.grossWeight || undefined,
+            netWeight: row.netWeight || undefined,
+            stoneWeight: row.stoneWeight || undefined,
+            metalType: row.metalType || undefined,
+            metalPurity: row.metalPurity || undefined,
+            collectionLine: row.collectionLine || undefined,
+            imageUrl: row.imageUrl || undefined,
+            reserved1: row.reserved1 || undefined,
+            reserved3: row.reserved3 || undefined,
+          })),
+        }),
+      });
 
-          const data = await res.json();
-          if (!res.ok) {
-            newResults.set(row.id, {
-              status: "error",
-              sku: computeDisplaySku(rows.indexOf(row)),
-              message: data.error ?? "Server error",
-            });
-          } else {
-            const job = data.data.job;
-            newResults.set(row.id, {
-              status: "success",
-              sku: job.sku,
-              jobId: job.jobId,
-              mqttStatus: "PENDING",
-            });
-            setSkuCache((prev) => ({
-              ...prev,
-              [row.prefix.toUpperCase()]: job.sku,
-            }));
-          }
-        } catch {
-          newResults.set(row.id, {
-            status: "error",
-            sku: computeDisplaySku(rows.indexOf(row)),
-            message: "Network error",
-          });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to save jobs.", { id: toastId });
+        return;
+      }
+
+      const jobs = data.data.jobs as Array<{
+        rowId: string;
+        jobId: string;
+        sku: string;
+        status: string;
+      }>;
+
+      const cacheUpdates: Record<string, string> = {};
+      for (const job of jobs) {
+        newResults.set(job.rowId, {
+          status: "success",
+          sku: job.sku,
+          jobId: job.jobId,
+          mqttStatus: "PENDING",
+        });
+        const r = rows.find((row) => row.id === job.rowId);
+        if (r?.prefix) {
+          cacheUpdates[r.prefix.toUpperCase()] = job.sku;
         }
-        setResults(new Map(newResults));
       }
 
-      const ok = [...newResults.values()].filter((r) => r.status === "success").length;
-      if (ok > 0) {
-        toast.success(
-          `Saved ${ok} job(s) with status PENDING in Recent Jobs!`,
-          { id: toastId }
-        );
-      } else {
-        toast.error("Failed to save jobs.", { id: toastId });
+      if (Object.keys(cacheUpdates).length > 0) {
+        setSkuCache((prev) => ({ ...prev, ...cacheUpdates }));
       }
+
+      setResults(new Map(newResults));
+      toast.success(
+        `Saved ${jobs.length} job(s) with status PENDING in Recent Jobs!`,
+        { id: toastId }
+      );
     } catch {
       toast.error("Failed to save jobs.", { id: toastId });
     } finally {
@@ -1684,7 +1682,7 @@ export default function NewPrintJobPage() {
     }
 
     setIsProcessingBatch(true);
-    const toastId = toast.loading("Generating Excel file…");
+    const toastId = toast.loading("Generating Excel file...");
 
     try {
       // 1. Prepare entries with preview SKUs
@@ -1700,7 +1698,7 @@ export default function NewPrintJobPage() {
         cleanName
       );
 
-      toast.loading(`Saving "${finalName}" to Google Drive…`, { id: toastId });
+      toast.loading(`Saving "${finalName}" to Google Drive...`, { id: toastId });
 
       // 3. Upload the Excel file directly to Google Drive
       const formData = new FormData();
@@ -1721,24 +1719,26 @@ export default function NewPrintJobPage() {
           { id: toastId, duration: 8000 }
         );
       } else {
-        toast.success(`Excel saved to Google Drive & downloaded!`, { id: toastId });
+        toast.success("Excel saved to Google Drive & downloaded!", { id: toastId });
       }
 
       // Close modal now that file is named, downloaded, and uploaded to Drive
       setIsNameModalOpen(false);
 
-      // 4. Send jobs to MQTT
+      // 4. Send batch to API & MQTT in ONE atomic request!
       startTransition(async () => {
         setSubmitted(true);
         const newResults = new Map<string, JobResult>();
 
-        for (const row of rows) {
-          try {
-            const res = await authFetch("/api/print-jobs", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...csrfHeaders() },
-              body: JSON.stringify({
-                printerId: selectedPrinterId,
+        try {
+          const res = await authFetch("/api/print-jobs/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...csrfHeaders() },
+            body: JSON.stringify({
+              printerId: selectedPrinterId,
+              skipDriveUpload: true, // Already uploaded batch Excel to Drive above
+              items: rows.map((row) => ({
+                rowId: row.id,
                 prefix: row.prefix.trim().toUpperCase(),
                 designNumber: row.designNumber || undefined,
                 imageName:
@@ -1753,48 +1753,79 @@ export default function NewPrintJobPage() {
                 imageUrl: row.imageUrl || undefined,
                 reserved1: row.reserved1 || undefined,
                 reserved3: row.reserved3 || undefined,
-                skipDriveUpload: true, // Already uploaded the whole batch to Drive with custom name!
-              }),
-            });
+              })),
+            }),
+          });
 
-            const data = await res.json();
-            if (!res.ok) {
+          const data = await res.json();
+          if (!res.ok) {
+            const errMsg = data.error ?? "Server error";
+            rows.forEach((row, idx) => {
               newResults.set(row.id, {
                 status: "error",
-                sku: computeDisplaySku(rows.indexOf(row)),
-                message: data.error ?? "Server error",
+                sku: computeDisplaySku(idx),
+                message: errMsg,
               });
-            } else {
-              const job = data.data.job;
-              newResults.set(row.id, {
-                status: "success",
-                sku: job.sku,
-                jobId: job.jobId,
-                mqttStatus: job.status,
-              });
-              setSkuCache((prev) => ({
-                ...prev,
-                [row.prefix.toUpperCase()]: job.sku,
-              }));
+            });
+            toast.error(errMsg);
+          } else {
+            const jobs = data.data.jobs as Array<{
+              rowId: string;
+              jobId: string;
+              sku: string;
+              status: string;
+            }>;
+
+            const cacheUpdates: Record<string, string> = {};
+            for (const job of jobs) {
+              if (job.status === "MQTT_FAILED") {
+                newResults.set(job.rowId, {
+                  status: "error",
+                  sku: job.sku,
+                  message: "MQTT publish failed",
+                });
+              } else {
+                newResults.set(job.rowId, {
+                  status: "success",
+                  sku: job.sku,
+                  jobId: job.jobId,
+                  mqttStatus: job.status,
+                });
+              }
+              const r = rows.find((row) => row.id === job.rowId);
+              if (r?.prefix) {
+                cacheUpdates[r.prefix.toUpperCase()] = job.sku;
+              }
             }
-          } catch {
+
+            if (Object.keys(cacheUpdates).length > 0) {
+              setSkuCache((prev) => ({ ...prev, ...cacheUpdates }));
+            }
+
+            const ok = jobs.filter((j) => j.status === "MQTT_PUBLISHED").length;
+            const fail = jobs.length - ok;
+            if (fail === 0) {
+              toast.success(
+                `${ok} tag${ok > 1 ? "s" : ""} sent to printer in 1 smooth continuous stream!`
+              );
+            } else if (ok === 0) {
+              toast.error(`All ${fail} print jobs failed.`);
+            } else {
+              toast.warning(`${ok} printed, ${fail} failed.`);
+            }
+          }
+        } catch {
+          rows.forEach((row, idx) => {
             newResults.set(row.id, {
               status: "error",
-              sku: computeDisplaySku(rows.indexOf(row)),
+              sku: computeDisplaySku(idx),
               message: "Network error",
             });
-          }
-          setResults(new Map(newResults));
+          });
+          toast.error("Network error while submitting print batch.");
         }
 
-        const ok = [...newResults.values()].filter(
-          (r) => r.status === "success"
-        ).length;
-        const fail = rows.length - ok;
-        if (fail === 0)
-          toast.success(`${ok} job${ok > 1 ? "s" : ""} sent to MQTT printer.`);
-        else if (ok === 0) toast.error(`All ${fail} print jobs failed.`);
-        else toast.warning(`${ok} printed, ${fail} failed.`);
+        setResults(new Map(newResults));
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to process print batch";
