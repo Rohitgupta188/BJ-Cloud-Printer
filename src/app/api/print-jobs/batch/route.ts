@@ -185,45 +185,40 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
           ? Number(grossWeight)
           : undefined;
 
+      const rawStoneNum =
+        stoneWeight !== undefined && !isNaN(Number(stoneWeight))
+          ? Number(stoneWeight)
+          : 0;
+
       const effectiveStoneWeight =
-        stoneWeight !== undefined && String(stoneWeight).trim() !== ""
-          ? stoneWeight
+        rawStoneNum > 0
+          ? String(stoneWeight).trim()
           : czNum > 0 || bsNum > 0
           ? (() => {
               const maxDec = Math.max(
                 getDecimalCount(effectiveCzWeight),
-                getDecimalCount(effectiveBsWeight)
+                getDecimalCount(effectiveBsWeight),
+                3
               );
               return (czNum + bsNum).toFixed(maxDec);
             })()
-          : grossWeight !== undefined &&
-            netWeight !== undefined &&
-            !isNaN(Number(grossWeight)) &&
-            !isNaN(Number(netWeight)) &&
-            Number(grossWeight) > Number(netWeight)
-          ? (() => {
-              const maxDec = Math.max(
-                getDecimalCount(grossWeight),
-                getDecimalCount(netWeight)
-              );
-              return Math.max(0, Number(grossWeight) - Number(netWeight)).toFixed(maxDec);
-            })()
-          : grossWeight;
+          : "0.000";
 
       const stoneWeightVal =
         effectiveStoneWeight !== undefined && !isNaN(Number(effectiveStoneWeight))
           ? Number(effectiveStoneWeight)
-          : undefined;
+          : 0;
 
       const effectiveNetWeight =
         netWeight !== undefined
           ? netWeight
           : grossNum !== undefined
-          ? stoneWeightVal !== undefined && stoneWeightVal > 0
+          ? stoneWeightVal > 0
             ? (() => {
                 const nDec = Math.max(
                   getDecimalCount(grossWeight),
-                  getDecimalCount(effectiveStoneWeight)
+                  getDecimalCount(effectiveStoneWeight),
+                  3
                 );
                 return Math.max(0, grossNum - stoneWeightVal).toFixed(nDec);
               })()

@@ -230,36 +230,38 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
         : undefined;
 
     const effectiveStoneWeight =
-      stoneWeight !== undefined
-        ? stoneWeight
+      stoneNum !== undefined && stoneNum > 0
+        ? String(stoneWeight).trim()
         : hasCz && !hasBs
-          ? effectiveCzWeight
+          ? (typeof effectiveCzWeight === "number" ? effectiveCzWeight.toFixed(3) : String(effectiveCzWeight))
           : !hasCz && hasBs
-            ? effectiveBsWeight
+            ? (typeof effectiveBsWeight === "number" ? effectiveBsWeight.toFixed(3) : String(effectiveBsWeight))
             : hasCz && hasBs
               ? (() => {
                   const sDec = Math.max(
                     getDecimalCount(effectiveCzWeight),
-                    getDecimalCount(effectiveBsWeight)
+                    getDecimalCount(effectiveBsWeight),
+                    3
                   );
                   return (czNum + bsNum).toFixed(sDec);
                 })()
-              : undefined;
+              : "0.000";
 
     const stoneWeightVal =
       effectiveStoneWeight !== undefined && !isNaN(Number(effectiveStoneWeight))
         ? Number(effectiveStoneWeight)
-        : undefined;
+        : 0;
 
     const effectiveNetWeight =
       netWeight !== undefined
         ? netWeight
         : grossNum !== undefined
-          ? stoneWeightVal !== undefined && stoneWeightVal > 0
+          ? stoneWeightVal > 0
             ? (() => {
                 const nDec = Math.max(
                   getDecimalCount(grossWeight),
-                  getDecimalCount(effectiveStoneWeight)
+                  getDecimalCount(effectiveStoneWeight),
+                  3
                 );
                 return Math.max(0, grossNum - stoneWeightVal).toFixed(nDec);
               })()
@@ -275,12 +277,12 @@ export const POST = withAuth(async (request: NextRequest, ctx) => {
       skuNumber: sku,
       designNumber,
       grossWeight: grossWeight ?? grossNum,
-      netWeight: effectiveNetWeight,
+      netWeight: effectiveNetWeight ?? netNum,
       stoneWeight: effectiveStoneWeight,
       metalPurity: cleanMetalPurity,
       metalType,
-      czWeight: effectiveCzWeight,
-      bsWeight: effectiveBsWeight,
+      czWeight: effectiveCzWeight ?? "0.000",
+      bsWeight: effectiveBsWeight ?? "0.000",
     });
 
     const jobId = crypto.randomUUID();

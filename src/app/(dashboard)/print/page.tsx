@@ -244,12 +244,14 @@ function computeWeights(
           getDecimalCount(val),
           hasStone
             ? getDecimalCount(row.stoneWeight)
-            : Math.max(getDecimalCount(row.reserved1), getDecimalCount(row.reserved3))
+            : Math.max(getDecimalCount(row.reserved1), getDecimalCount(row.reserved3)),
+          3
         );
         patch.netWeight = Math.max(0, grossNum - stone).toFixed(dec);
       } else {
-        // If no stone weight entered yet or stone is 0, Net Weight matches Gross Weight exactly as written!
+        // If stone is 0 or blank, Net Weight matches Gross Weight, and Stone Weight is 0.000!
         patch.netWeight = val;
+        patch.stoneWeight = "0.000";
       }
     } else if (val.trim() === "") {
       patch.netWeight = "";
@@ -305,17 +307,15 @@ function computeWeights(
           patch.netWeight = Math.max(0, grossNum - stone).toFixed(netDec);
         }
       } else {
-        patch.stoneWeight =
-          newR1.trim() === "0" || newR3.trim() === "0"
-            ? hasR1 ? newR1.trim() : newR3.trim()
-            : "";
+        // If CZ and BS are 0 or blank, stone weight is 0.000!
+        patch.stoneWeight = "0.000";
         const grossNum = parseFloat(row.grossWeight);
         if (!isNaN(grossNum)) {
           patch.netWeight = row.grossWeight;
         }
       }
     } else if (newR1.trim() === "" && newR3.trim() === "") {
-      patch.stoneWeight = "";
+      patch.stoneWeight = "0.000";
       const grossNum = parseFloat(row.grossWeight);
       if (!isNaN(grossNum)) {
         patch.netWeight = row.grossWeight;
@@ -383,32 +383,41 @@ async function generateAndDownloadBatchExcel(
   });
   headerRow.height = 22;
 
-  const parseWeightValue = (val: unknown): { value: number | string; numFmt?: string } => {
+  const parseWeightValue = (val: unknown, defaultZero = false): { value: number | string; numFmt?: string } => {
     if (val === undefined || val === null || val === "") {
-      return { value: "" };
+      return defaultZero ? { value: 0, numFmt: "0.000" } : { value: "" };
     }
     const s = String(val).trim();
     if (s === "") {
-      return { value: "" };
+      return defaultZero ? { value: 0, numFmt: "0.000" } : { value: "" };
     }
     const n = typeof val === "number" ? val : Number(s);
     if (isNaN(n)) {
       return { value: s };
     }
+    if (n === 0 && defaultZero) {
+      return { value: 0, numFmt: "0.000" };
+    }
     const dot = s.indexOf(".");
     const decimals = dot === -1 ? 0 : s.length - dot - 1;
-    const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0.000";
+    const numFmt = decimals > 0 ? "0." + "0".repeat(Math.max(decimals, 3)) : "0.000";
     return { value: n, numFmt };
   };
 
   entries.forEach(({ row, displaySku, result }) => {
     const rawSku = result?.status === "success" ? result.sku : displaySku || "";
     const skuVal = formatPrinterSku(rawSku);
+
+    const czNum = row.reserved1 !== undefined && !isNaN(Number(row.reserved1)) ? Number(row.reserved1) : 0;
+    const bsNum = row.reserved3 !== undefined && !isNaN(Number(row.reserved3)) ? Number(row.reserved3) : 0;
+    const rawStone = row.stoneWeight !== undefined && !isNaN(Number(row.stoneWeight)) ? Number(row.stoneWeight) : 0;
+    const effectiveStone = rawStone > 0 ? rawStone : (czNum > 0 || bsNum > 0 ? (czNum + bsNum) : 0);
+
     const gross  = parseWeightValue(row.grossWeight);
     const net    = parseWeightValue(row.netWeight);
-    const stone  = parseWeightValue(row.stoneWeight);
-    const cz     = parseWeightValue(row.reserved1);
-    const bs     = parseWeightValue(row.reserved3);
+    const stone  = parseWeightValue(effectiveStone, true);
+    const cz     = parseWeightValue(czNum > 0 ? row.reserved1 : 0, true);
+    const bs     = parseWeightValue(bsNum > 0 ? row.reserved3 : 0, true);
 
     const cleanPurity = (val?: string | null): string | number => {
       if (!val) return "";
@@ -1758,13 +1767,13 @@ export default function NewPrintJobPage() {
                 itemStatus: "INSTOCK",
                 grossWeight: row.grossWeight || undefined,
                 netWeight: row.netWeight || undefined,
-                stoneWeight: row.stoneWeight || undefined,
+                stoneWeight: (row.stoneWeight && row.stoneWeight.trim() !== "" && parseFloat(row.stoneWeight) > 0) ? row.stoneWeight : "0.000",
                 metalType: row.metalType || undefined,
                 metalPurity: row.metalPurity || undefined,
                 collectionLine: row.collectionLine || undefined,
                 imageUrl: row.imageUrl || undefined,
-                reserved1: row.reserved1 || undefined,
-                reserved3: row.reserved3 || undefined,
+                reserved1: (row.reserved1 && row.reserved1.trim() !== "") ? row.reserved1 : "0.000",
+                reserved3: (row.reserved3 && row.reserved3.trim() !== "") ? row.reserved3 : "0.000",
               })),
             }),
           });
