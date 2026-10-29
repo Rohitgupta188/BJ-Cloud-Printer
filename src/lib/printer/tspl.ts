@@ -13,14 +13,23 @@ export interface TsplItemPayloadInput {
 function formatTsplWeight(val?: string | number, fallback = ""): string {
   if (val === undefined || val === null) return fallback;
   const str = String(val).trim();
-  return str === "" ? fallback : str;
+  if (str === "") return fallback;
+  const num = Number(str);
+  if (!isNaN(num) && num === 0) return "0.000";
+  return str;
 }
 
 export function generateTsplPayload(item: TsplItemPayloadInput): string {
   const dNo = item.designNumber ?? "";
   const gWt = formatTsplWeight(item.grossWeight);
   const nWt = formatTsplWeight(item.netWeight);
-  const sWt = formatTsplWeight(item.stoneWeight, "0.000");
+
+  const czNum = item.czWeight !== undefined && !isNaN(Number(item.czWeight)) ? Number(item.czWeight) : 0;
+  const bsNum = item.bsWeight !== undefined && !isNaN(Number(item.bsWeight)) ? Number(item.bsWeight) : 0;
+  const rawStone = item.stoneWeight !== undefined && !isNaN(Number(item.stoneWeight)) ? Number(item.stoneWeight) : 0;
+  const effectiveStone = rawStone > 0 ? rawStone : (czNum > 0 || bsNum > 0 ? (czNum + bsNum) : 0);
+
+  const sWt = formatTsplWeight(effectiveStone, "0.000");
   const czWt = formatTsplWeight(item.czWeight, "0.000");
   const bsWt = formatTsplWeight(item.bsWeight, "0.000");
   const rawPurity = item.metalPurity !== undefined && item.metalPurity !== null ? String(item.metalPurity) : "";
@@ -88,7 +97,13 @@ export function generateTsplBatchPayload(items: TsplItemPayloadInput[]): string 
     const dNo = item.designNumber ?? "";
     const gWt = formatTsplWeight(item.grossWeight);
     const nWt = formatTsplWeight(item.netWeight);
-    const sWt = formatTsplWeight(item.stoneWeight, "0.000");
+
+    const czNum = item.czWeight !== undefined && !isNaN(Number(item.czWeight)) ? Number(item.czWeight) : 0;
+    const bsNum = item.bsWeight !== undefined && !isNaN(Number(item.bsWeight)) ? Number(item.bsWeight) : 0;
+    const rawStone = item.stoneWeight !== undefined && !isNaN(Number(item.stoneWeight)) ? Number(item.stoneWeight) : 0;
+    const effectiveStone = rawStone > 0 ? rawStone : (czNum > 0 || bsNum > 0 ? (czNum + bsNum) : 0);
+
+    const sWt = formatTsplWeight(effectiveStone, "0.000");
     const czWt = formatTsplWeight(item.czWeight, "0.000");
     const bsWt = formatTsplWeight(item.bsWeight, "0.000");
     const rawPurity =
