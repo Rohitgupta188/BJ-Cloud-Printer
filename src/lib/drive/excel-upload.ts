@@ -92,30 +92,38 @@ async function buildExcelBuffer(records: PrintJobRecord[]): Promise<Buffer> {
   headerRow.height = 22;
 
   records.forEach((rec) => {
-    const parseWeightValue = (val: unknown): { value: number | string; numFmt?: string } => {
+    const parseWeightValue = (val: unknown, defaultZero = false): { value: number | string; numFmt?: string } => {
       if (val === undefined || val === null || val === "") {
-        return { value: "" };
+        return defaultZero ? { value: 0, numFmt: "0.000" } : { value: "" };
       }
       const s = String(val).trim();
       if (s === "") {
-        return { value: "" };
+        return defaultZero ? { value: 0, numFmt: "0.000" } : { value: "" };
       }
       const n = typeof val === "number" ? val : Number(s);
       if (isNaN(n)) {
         return { value: s };
       }
+      if (n === 0 && defaultZero) {
+        return { value: 0, numFmt: "0.000" };
+      }
       const dot = s.indexOf(".");
       const decimals = dot === -1 ? 0 : s.length - dot - 1;
-      const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0.000";
+      const numFmt = decimals > 0 ? "0." + "0".repeat(Math.max(decimals, 3)) : "0.000";
       return { value: n, numFmt };
     };
 
+    const czNum = rec.reserved1 !== undefined && !isNaN(Number(rec.reserved1)) ? Number(rec.reserved1) : 0;
+    const bsNum = rec.reserved3 !== undefined && !isNaN(Number(rec.reserved3)) ? Number(rec.reserved3) : 0;
+    const rawStone = rec.stoneWeight !== undefined && !isNaN(Number(rec.stoneWeight)) ? Number(rec.stoneWeight) : 0;
+    const effectiveStone = rawStone > 0 ? rawStone : (czNum > 0 || bsNum > 0 ? (czNum + bsNum) : 0);
+
     const gross      = parseWeightValue(rec.grossWeight);
     const net        = parseWeightValue(rec.netWeight);
-    const totalStone = parseWeightValue(rec.totalStoneWeight ?? rec.stoneWeight);
-    const stone      = parseWeightValue(rec.stoneWeight);
-    const cz         = parseWeightValue(rec.reserved1);
-    const bs         = parseWeightValue(rec.reserved3);
+    const totalStone = parseWeightValue(effectiveStone, true);
+    const stone      = parseWeightValue(effectiveStone, true);
+    const cz         = parseWeightValue(czNum > 0 ? rec.reserved1 : 0, true);
+    const bs         = parseWeightValue(bsNum > 0 ? rec.reserved3 : 0, true);
 
     const formatExcelSku = (val?: string | null): string => {
       if (!val) return "";
