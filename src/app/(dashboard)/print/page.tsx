@@ -346,37 +346,39 @@ async function generateAndDownloadBatchExcel(
   const wb = new ExcelJS.Workbook();
   wb.creator = "BJ Cloud Printer";
   wb.created = new Date();
-  const ws = wb.addWorksheet("Print Jobs");
+  const ws = wb.addWorksheet("Products", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
 
-  ws.columns = [
-    { header: "RFID Tag", key: "rfidTag", width: 18 },
-    { header: "SKU Number", key: "skuNumber", width: 18 },
-    { header: "Design Number", key: "designNumber", width: 18 },
-    { header: "Image Name", key: "imageName", width: 22 },
-    { header: "Item Status", key: "itemStatus", width: 14 },
-    { header: "Sales Man Name", key: "salesManName", width: 16 },
-    { header: "Item Type", key: "itemType", width: 14 },
-    { header: "Size", key: "size", width: 10 },
-    { header: "Gross Weight", key: "grossWeight", width: 14 },
-    { header: "Net Weight", key: "netWeight", width: 14 },
-    { header: "Collection Line", key: "collectionLine", width: 18 },
-    { header: "Item Category", key: "itemCategory", width: 16 },
-    { header: "Metal Type", key: "metalType", width: 14 },
-    { header: "Metal Purity", key: "metalPurity", width: 14 },
-    { header: "Metal Weight", key: "metalWeight", width: 14 },
-    { header: "Total Diamond Weight", key: "totalDiamondWeight", width: 20 },
-    { header: "Total Stone Weight", key: "totalStoneWeight", width: 18 },
-    { header: "Stone Weight", key: "stoneWeight", width: 14 },
-    { header: "Selling Price", key: "sellingPrice", width: 14 },
-    { header: "CZ Wt", key: "czWt", width: 12 },
-    { header: "Reserved 2", key: "reserved2", width: 14 },
-    { header: "BS Wt", key: "bsWt", width: 12 },
-    { header: "CS Wt", key: "csWt", width: 12 },
+  const HEADERS = [
+    "RFID Tag", "SKU Number", "Design Number", "Image Name", "Item Status",
+    "Sales Man Name", "Item Type", "Size", "Gross Weight", "Net Weight",
+    "Collection Line", "Item Category", "Metal Type", "Metal Purity", "Metal Weight",
+    "Total Diamond Weight", "Total Stone Weight", "Center Stone Type",
+    "Center Stone Shape ", "Center Stone Size", "Center Stone Quality ",
+    "Center Stone Color ", "Center Stone Weight ", "Center Stone Certificate",
+    "Center Stone Cut", "Stone Type", "Stone Shape", "Stone Size", "Stone Quality",
+    "Stone Color", "Stone Count", "Stone Weight", "Stone Certificate", "Stone Cut",
+    "Total Stone Count", "Finding Type", "Finding Metal", "Finding Weight",
+    "Finding Metal Purity", "Gold Lock", "Silver Lock", "Platinum Lock",
+    "Cost Price", "Fob Price", "Selling Price", "Metal Price", "Diamond Price",
+    "Stone Price", "Labor Price", "Labor Charges Per Gram", "Set Id",
+    "Set Image Name", "Company", "Location", "Counter Number",
+    "Counter Description", "Tray Number", "Tray Description", "Owner", "Customer",
+    "Kundan Weight", "Kundan Pcs", "Meena Weight", "Remarks",
+    "Reserved 1", "Reserved 2", "Reserved 3", "Reserved 4", "Reserved 5",
+    "Reserved 6", "Reserved 7",
   ];
+
+  ws.columns = HEADERS.map((h, i) => ({
+    header: h,
+    key: `col_${i}`,
+    width: i <= 3 ? 18 : [8, 9, 13, 16, 31].includes(i) ? 14 : 12,
+  }));
 
   const headerRow = ws.getRow(1);
   headerRow.eachCell((cell) => {
-    cell.font = { bold: true, size: 10 };
+    cell.font = { bold: true, size: 11, name: "Calibri" };
     cell.alignment = { vertical: "middle", horizontal: "center" };
   });
   headerRow.height = 22;
@@ -395,7 +397,7 @@ async function generateAndDownloadBatchExcel(
     }
     const dot = s.indexOf(".");
     const decimals = dot === -1 ? 0 : s.length - dot - 1;
-    const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0";
+    const numFmt = decimals > 0 ? "0." + "0".repeat(decimals) : "0.000";
     return { value: n, numFmt };
   };
 
@@ -408,48 +410,58 @@ async function generateAndDownloadBatchExcel(
     const cz     = parseWeightValue(row.reserved1);
     const bs     = parseWeightValue(row.reserved3);
 
-    const r = ws.addRow({
-      rfidTag: skuVal,
-      skuNumber: skuVal,
-      designNumber: row.designNumber || "",
-      imageName: row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : ""),
-      itemStatus: "INSTOCK",
-      salesManName: "",
-      itemType: row.prefix || "",
-      size: "",
-      grossWeight: gross.value,
-      netWeight: net.value,
-      collectionLine: row.collectionLine || "",
-      itemCategory: "",
-      metalType: row.metalType || "",
-      metalPurity: row.metalPurity ? row.metalPurity.replace(/[kK\s]/g, "").replace(/T$/i, "") : "",
-      metalWeight: net.value,
-      totalDiamondWeight: "",
-      totalStoneWeight: stone.value,
-      stoneWeight: stone.value,
-      sellingPrice: "",
-      czWt: cz.value,
-      reserved2: "",
-      bsWt: bs.value,
-      csWt: "",
-    });
+    const cleanPurity = (val?: string | null): string | number => {
+      if (!val) return "";
+      const s = String(val).replace(/[kK\s]/g, "").replace(/T$/i, "");
+      const n = Number(s);
+      return isNaN(n) ? s : n;
+    };
 
-    if (gross.numFmt) r.getCell("grossWeight").numFmt = gross.numFmt;
-    if (net.numFmt)   r.getCell("netWeight").numFmt = net.numFmt;
-    if (net.numFmt)   r.getCell("metalWeight").numFmt = net.numFmt;
-    if (stone.numFmt) r.getCell("totalStoneWeight").numFmt = stone.numFmt;
-    if (stone.numFmt) r.getCell("stoneWeight").numFmt = stone.numFmt;
-    if (cz.numFmt)    r.getCell("czWt").numFmt = cz.numFmt;
-    if (bs.numFmt)    r.getCell("bsWt").numFmt = bs.numFmt;
-  });
+    const rowValues = new Array(71).fill("");
+    rowValues[0]  = skuVal;
+    rowValues[1]  = skuVal;
+    rowValues[2]  = row.designNumber || "";
+    rowValues[3]  = row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : "");
+    rowValues[4]  = "INSTOCK";
+    rowValues[5]  = "";
+    rowValues[6]  = row.prefix || "";
+    rowValues[7]  = "";
+    rowValues[8]  = gross.value;
+    rowValues[9]  = net.value;
+    rowValues[10] = row.collectionLine || "";
+    rowValues[11] = "";
+    rowValues[12] = row.metalType || "";
+    rowValues[13] = cleanPurity(row.metalPurity);
+    rowValues[14] = ""; // Metal Weight
+    rowValues[15] = ""; // Total Diamond Weight
+    rowValues[16] = stone.value; // Total Stone Weight
+    rowValues[31] = stone.value; // Stone Weight
+    rowValues[64] = cz.value;    // Reserved 1 (CZ Wt)
+    rowValues[66] = bs.value;    // Reserved 3 (BS Wt)
 
-  ws.eachRow((r, ri) => {
-    if (ri === 1) return;
-    r.height = 18;
+    const r = ws.addRow(rowValues);
+
     r.eachCell((cell) => {
+      cell.font = { size: 10, name: "Calibri" };
       cell.alignment = { vertical: "middle", horizontal: "center" };
     });
+
+    if (gross.numFmt) r.getCell(9).numFmt  = gross.numFmt;
+    if (net.numFmt)   r.getCell(10).numFmt = net.numFmt;
+    if (stone.numFmt) {
+      r.getCell(17).numFmt = stone.numFmt;
+      r.getCell(32).numFmt = stone.numFmt;
+    }
+    if (cz.numFmt)    r.getCell(65).numFmt = cz.numFmt;
+    if (bs.numFmt)    r.getCell(67).numFmt = bs.numFmt;
+
+    r.height = 18;
   });
+
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to:   { row: 1, column: ws.columns.length },
+  };
 
   let fileName = (customFileName || "").trim();
   if (!fileName) {
