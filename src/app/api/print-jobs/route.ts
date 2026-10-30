@@ -43,14 +43,42 @@ const CreatePrintJobSchema = z.object({
     .max(20, "Item type must be ≤ 20 characters")
     .regex(/^[A-Z0-9]+$/i, "Item type must be alphanumeric only"),
 
-  designNumber:   z.string().trim().optional(),
-  imageName:      z.string().trim().optional(),
-  itemStatus:     z.string().trim().default("INSTOCK").optional(),
-  grossWeight:    z.union([z.number(), z.string().trim()]).optional(),
-  netWeight:      z.union([z.number(), z.string().trim()]).optional(),
-  stoneWeight:    z.union([z.number(), z.string().trim()]).optional(),
-  metalType:      z.string().trim().optional(),
-  metalPurity:    z.string().trim().optional(),
+  designNumber: z
+    .string()
+    .trim()
+    .min(1, "Design number is required"),
+
+  imageName: z
+    .string()
+    .trim()
+    .min(1, "Image name is required"),
+
+  itemStatus: z.string().trim().default("INSTOCK").optional(),
+
+  grossWeight: z
+    .union([
+      z.number().positive("Gross weight must be greater than 0"),
+      z
+        .string()
+        .trim()
+        .min(1, "Gross weight is required")
+        .refine((val) => !isNaN(Number(val)) && Number(val) > 0, {
+          message: "Gross weight must be a valid number greater than 0",
+        }),
+    ]),
+
+  netWeight: z.union([z.number(), z.string().trim()]).optional(),
+  stoneWeight: z.union([z.number(), z.string().trim()]).optional(),
+
+  metalType: z
+    .string()
+    .trim()
+    .min(1, "Metal type is required"),
+
+  metalPurity: z
+    .string()
+    .trim()
+    .min(1, "Metal purity is required"),
   collectionLine: z.string().trim().optional(),
   imageUrl:       z.string().trim().optional(),
   czWeight:       z.union([z.string().trim(), z.number()]).optional(),
