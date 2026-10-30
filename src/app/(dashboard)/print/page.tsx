@@ -40,6 +40,7 @@ import {
   Save,
   Check,
   AlertTriangle,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -674,6 +675,7 @@ function JobRow({
   isSubmitting,
   onChange,
   onRemove,
+  onReprint,
 }: {
   row: RowData;
   index: number;
@@ -683,6 +685,7 @@ function JobRow({
   isSubmitting: boolean;
   onChange: (patch: Partial<RowData>) => void;
   onRemove: () => void;
+  onReprint?: (jobId: string, sku: string) => void;
 }) {
   const baseId = useId();
   const designTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -864,7 +867,7 @@ function JobRow({
                   />
                 </Field>
 
-                <Field label="Design Number" id={id("design")}>
+                <Field label="Design Number *" id={id("design")}>
                   <div className="relative">
                     <Input
                       id={id("design")}
@@ -879,7 +882,7 @@ function JobRow({
                   </div>
                 </Field>
 
-                <Field label="Image Name" id={id("imageName")}>
+                <Field label="Image Name *" id={id("imageName")}>
                   <Input
                     id={id("imageName")}
                     value={row.imageName || ""}
@@ -893,7 +896,7 @@ function JobRow({
               <Separator className="opacity-30" />
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Gross Weight (g)" id={id("gross")}>
+                <Field label="Gross Weight (g) *" id={id("gross")}>
                   <Input
                     id={id("gross")}
                     type="number"
@@ -985,7 +988,7 @@ function JobRow({
                     tabIndex={-1}
                   />
                 </Field>
-                <Field label="Metal Type" id={id("metal")}>
+                <Field label="Metal Type *" id={id("metal")}>
                   <Input
                     id={id("metal")}
                     value={row.metalType}
@@ -1000,7 +1003,7 @@ function JobRow({
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Metal Purity" id={id("purity")}>
+                <Field label="Metal Purity *" id={id("purity")}>
                   <Input
                     id={id("purity")}
                     value={row.metalPurity}
@@ -1033,7 +1036,7 @@ function JobRow({
               {result?.status === "success" && (
                 <div className="flex items-center gap-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="font-mono text-sm font-bold text-emerald-400">
                       {successSkuToDisplay}
                     </p>
@@ -1041,9 +1044,22 @@ function JobRow({
                       {result.jobId}
                     </p>
                   </div>
-                  <Badge className="ml-auto text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
+                  <Badge className="text-[10px] bg-emerald-500/15 text-emerald-400 border-emerald-500/20">
                     {result.mqttStatus}
                   </Badge>
+                  {onReprint && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onReprint(result.jobId, result.sku)}
+                      className="h-7 px-2.5 text-xs gap-1.5 border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 cursor-pointer shrink-0"
+                      title="Reprint only this label with existing SKU"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Reprint
+                    </Button>
+                  )}
                 </div>
               )}
               {result?.status === "error" && (
@@ -1150,6 +1166,89 @@ export default function NewPrintJobPage() {
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
   const [excelFileName, setExcelFileName] = useState("");
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+  const [isReprinting, setIsReprinting] = useState(false);
+
+  // ── Reprint Handler: Re-dispatches already generated SKUs to printer ───────
+  async function handleReprintBatch() {
+    const successfulJobIds = rows
+      .map((r) => results.get(r.id))
+      .filter(
+        (res): res is { status: "success"; sku: string; jobId: string; mqttStatus: string } =>
+          res?.status === "success" && Boolean(res.jobId)
+      )
+      .map((res) => res.jobId);
+
+    if (successfulJobIds.length === 0) {
+      toast.error("No printed tags available to reprint.");
+      return;
+    }
+
+    setIsReprinting(true);
+    const toastId = toast.loading(
+      `Sending ${successfulJobIds.length} label(s) to ${selectedPrinterId} for reprint…`
+    );
+
+    try {
+      const res = await authFetch("/api/print-jobs/reprint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({
+          jobIds: successfulJobIds,
+          printerId: selectedPrinterId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || "Failed to reprint batch.", { id: toastId });
+        return;
+      }
+
+      toast.success(
+        `Reprinted ${data.data.reprinted} tag(s) to ${selectedPrinterId}! (Existing SKUs preserved)`,
+        { id: toastId, duration: 6000 }
+      );
+
+      setResults((prev) => {
+        const next = new Map(prev);
+        for (const [rowId, r] of next.entries()) {
+          if (r.status === "success" && successfulJobIds.includes(r.jobId)) {
+            next.set(rowId, { ...r, mqttStatus: "MQTT_PUBLISHED" });
+          }
+        }
+        return next;
+      });
+    } catch {
+      toast.error("Network error while submitting reprint.", { id: toastId });
+    } finally {
+      setIsReprinting(false);
+    }
+  }
+
+  async function handleReprintSingle(jobId: string, sku: string) {
+    if (!jobId) return;
+    const toastId = toast.loading(`Reprinting SKU ${sku} to ${selectedPrinterId}…`);
+    try {
+      const res = await authFetch("/api/print-jobs/reprint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({
+          jobIds: [jobId],
+          printerId: selectedPrinterId,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || `Failed to reprint SKU ${sku}.`, { id: toastId });
+        return;
+      }
+
+      toast.success(`Reprinted label for SKU ${sku} successfully!`, { id: toastId });
+    } catch {
+      toast.error(`Network error reprinting SKU ${sku}.`, { id: toastId });
+    }
+  }
 
   // ── Clear Confirmation Modal ──────────────────────────────────────────────
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
@@ -1580,12 +1679,51 @@ export default function NewPrintJobPage() {
   function validateAll(): string | null {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
-      if (!r.prefix.trim())
-        return `Row ${i + 1}: Item Type is required.`;
-      if (!/^[A-Z0-9]+$/i.test(r.prefix.trim()))
-        return `Row ${i + 1}: Item Type must be alphanumeric.`;
-      if (!computeDisplaySku(i))
-        return `Row ${i + 1}: SKU preview still loading — wait a moment.`;
+      const prefix = rows.length > 1 ? `Row ${i + 1}: ` : "";
+
+      // 1. Item Type (Compulsory)
+      if (!r.prefix || !r.prefix.trim()) {
+        return `${prefix}Item Type is required.`;
+      }
+      if (!/^[A-Z0-9]+$/i.test(r.prefix.trim())) {
+        return `${prefix}Item Type must be alphanumeric only.`;
+      }
+
+      // 2. Design Number (Compulsory)
+      if (!r.designNumber || !r.designNumber.trim()) {
+        return `${prefix}Design Number is required.`;
+      }
+
+      // 3. Image Name (Compulsory)
+      const effectiveImg =
+        r.imageName?.trim() || (r.designNumber.trim() ? `${r.designNumber.trim()}.jpg` : "");
+      if (!effectiveImg) {
+        return `${prefix}Image Name is required.`;
+      }
+
+      // 4. Gross Weight (Compulsory)
+      if (!r.grossWeight || String(r.grossWeight).trim() === "") {
+        return `${prefix}Gross Weight is required.`;
+      }
+      const gWtNum = Number(r.grossWeight);
+      if (isNaN(gWtNum) || gWtNum <= 0) {
+        return `${prefix}Gross Weight must be a valid number greater than 0.`;
+      }
+
+      // 5. Metal Type (Compulsory)
+      if (!r.metalType || !r.metalType.trim()) {
+        return `${prefix}Metal Type is required.`;
+      }
+
+      // 6. Metal Purity (Compulsory)
+      if (!r.metalPurity || !r.metalPurity.trim()) {
+        return `${prefix}Metal Purity is required.`;
+      }
+
+      // SKU preview validation
+      if (!computeDisplaySku(i)) {
+        return `${prefix}SKU preview still loading - wait a moment.`;
+      }
     }
     return null;
   }
@@ -1618,7 +1756,7 @@ export default function NewPrintJobPage() {
             prefix: row.prefix.trim().toUpperCase(),
             designNumber: row.designNumber || undefined,
             imageName:
-              row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
+              row.imageName?.trim() || (row.designNumber ? `${row.designNumber.trim()}.jpg` : "unknown.jpg"),
             itemStatus: "INSTOCK",
             grossWeight: row.grossWeight || undefined,
             netWeight: row.netWeight || undefined,
@@ -1763,7 +1901,7 @@ export default function NewPrintJobPage() {
                 prefix: row.prefix.trim().toUpperCase(),
                 designNumber: row.designNumber || undefined,
                 imageName:
-                  row.imageName || (row.designNumber ? `${row.designNumber}.jpg` : undefined),
+              row.imageName?.trim() || (row.designNumber ? `${row.designNumber.trim()}.jpg` : "unknown.jpg"),
                 itemStatus: "INSTOCK",
                 grossWeight: row.grossWeight || undefined,
                 netWeight: row.netWeight || undefined,
@@ -1993,7 +2131,7 @@ export default function NewPrintJobPage() {
       {/* ── Scrollable Form Body ── */}
       <div className="flex-1 max-w-6xl w-full space-y-4 px-8 py-8 pb-32">
         {/* ── Quick Import Banner & Drag-and-drop zone ── */}
-        <div
+        {/* <div
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragging(true);
@@ -2015,15 +2153,15 @@ export default function NewPrintJobPage() {
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
                 <FileSpreadsheet className="h-5 w-5" />
               </div>
-              <div>
+               <div>
                 <p className="text-sm font-semibold text-foreground flex items-center gap-1.5">
                   Import Excel for Batch Printing
                   <Sparkles className="h-3.5 w-3.5 text-amber-500" />
                 </p>
-                {/* <p className="text-xs text-muted-foreground">
+                 <p className="text-xs text-muted-foreground">
                   Upload an Excel (.xlsx) file containing past SKUs or design numbers. Product details & images auto-fill, and new unique SKUs are generated for printing.
-                </p> */}
-              </div>
+                </p> 
+              </div> 
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Button
@@ -2053,7 +2191,7 @@ export default function NewPrintJobPage() {
               </Button>
             </div>
           </div>
-        </div>
+        </div> */}
 
         {/* ── Batch Defaults (Metal Type & Purity) ── */}
         <div className="rounded-xl border border-border/50 bg-card p-4 shadow-xs">
@@ -2210,6 +2348,7 @@ export default function NewPrintJobPage() {
                 }
               }}
               onRemove={() => removeRow(row.id)}
+              onReprint={handleReprintSingle}
             />
           ))}
         </div>
@@ -2347,30 +2486,63 @@ export default function NewPrintJobPage() {
               )}
             </Button>
 
-            {/* Primary Print Button */}
-            <Button
-              id="submit-batch-btn"
-              className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 min-w-36"
-              onClick={handleSubmit}
-              disabled={isPending || isSavingPending || !hasAnyPrefix}
-            >
-              {isPending ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Printing {results.size + 1} / {rows.length}…
-                </>
-              ) : allDone ? (
-                <>
-                  <Printer className="h-3.5 w-3.5" />
-                  Print Again ({rows.length})
-                </>
-              ) : (
-                <>
-                  <Printer className="h-3.5 w-3.5" />
-                  Print {rows.length} Job{rows.length > 1 ? "s" : ""}
-                </>
-              )}
-            </Button>
+            {/* Primary Actions: Print vs Reprint */}
+            {allDone ? (
+              <div className="flex items-center gap-2">
+                {/* Reprint Button - Preserves Existing SKUs */}
+                <Button
+                  id="reprint-batch-btn"
+                  className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-amber-600/20 hover:shadow-amber-600/30 transition-all cursor-pointer bg-amber-600 hover:bg-amber-700 text-white min-w-36"
+                  onClick={handleReprintBatch}
+                  disabled={isReprinting || isPending || isSavingPending}
+                  title="Reprint the exact same labels with existing SKUs (no new SKUs generated)"
+                >
+                  {isReprinting ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      Reprinting…
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reprint Labels ({successCount})
+                    </>
+                  )}
+                </Button>
+
+                {/* Print as New Batch Button - For New Physical Pieces */}
+                <Button
+                  id="submit-new-batch-btn"
+                  variant="outline"
+                  className="h-9 px-3 gap-1.5 rounded-xl text-xs font-semibold hover:bg-accent cursor-pointer"
+                  onClick={handleSubmit}
+                  disabled={isPending || isSavingPending || isReprinting}
+                  title="Assigns brand new sequential SKUs for new physical pieces"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                  Print as New Batch (New SKUs)
+                </Button>
+              </div>
+            ) : (
+              <Button
+                id="submit-batch-btn"
+                className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 min-w-36"
+                onClick={handleSubmit}
+                disabled={isPending || isSavingPending || !hasAnyPrefix}
+              >
+                {isPending ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Printing {results.size + 1} / {rows.length}…
+                  </>
+                ) : (
+                  <>
+                    <Printer className="h-3.5 w-3.5" />
+                    Print {rows.length} Job{rows.length > 1 ? "s" : ""}
+                  </>
+                )}
+              </Button>
+            )}
           </div>
         </div>
       </div>
