@@ -302,43 +302,44 @@ export default function DashboardPage() {
   }
 
   // ── Action: Print Selected SKUs (Re-print return labels) ────────────────────
-  // async function handlePrintSelected(jobIdsToPrint?: string[], targetPrinterId?: string) {
-  //   const ids = jobIdsToPrint ?? Array.from(selectedJobIds);
-  //   if (ids.length === 0) {
-  //     toast.error("Please select at least one SKU to print.");
-  //     return;
-  //   }
+  async function handlePrintSelected(jobIdsToPrint?: string[], targetPrinterId?: string) {
+    const ids = jobIdsToPrint ?? Array.from(selectedJobIds);
+    if (ids.length === 0) {
+      toast.error("Please select at least one SKU to print.");
+      return;
+    }
 
-  //   const effectivePrinterId = targetPrinterId || reprintPrinterId;
+    const effectivePrinterId = targetPrinterId || reprintPrinterId;
 
-  //   setIsPrintingSelected(true);
-  //   const toastId = toast.loading(`Sending ${ids.length} job(s) to ${effectivePrinterId}…`);
+    setIsPrintingSelected(true);
+    const toastId = toast.loading(`Sending ${ids.length} job(s) to ${effectivePrinterId}…`);
 
-  //   try {
-  //     const res = await authFetch("/api/print-jobs/reprint", {
-  //       method: "POST",
-  //       headers: { "Content-Type": "application/json", ...csrfHeaders() },
-  //       body: JSON.stringify({ jobIds: ids, printerId: effectivePrinterId }),
-  //     });
+    try {
+      const res = await authFetch("/api/print-jobs/reprint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({ jobIds: ids, printerId: effectivePrinterId }),
+      });
 
-  //     const json = await res.json();
-  //     if (!res.ok) {
-  //       toast.error(json.error || "Failed to print selected jobs", { id: toastId });
-  //       return;
-  //     }
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || "Failed to print selected jobs", { id: toastId });
+        return;
+      }
 
-  //     toast.success(
-  //       `Sent ${json.data.reprinted} SKU(s) to ${effectivePrinterId}!`,
-  //       { id: toastId }
-  //     );
+      toast.success(
+        `Reprinted ${json.data.reprinted} SKU(s) to ${effectivePrinterId}! (Existing SKUs preserved)`,
+        { id: toastId }
+      );
 
-  //     // Refresh job list to update status in table
-  //     fetchJobs();
-  //   } catch {
-  //     toast.error("Network error while trying to print.", { id: toastId });
-  //   } finally {
-  //     setIsPrintingSelected(false);
-  //   }
+      // Refresh job list to update status in table
+      fetchJobs();
+    } catch {
+      toast.error("Network error while trying to print.", { id: toastId });
+    } finally {
+      setIsPrintingSelected(false);
+    }
+  }
   // }
 
   // ── Action: Download Selected SKUs as Excel ────────────────────────────────
@@ -676,9 +677,9 @@ export default function DashboardPage() {
                       <th className="w-[9.5%] px-4 py-3 text-left text-[11px] font-medium text-muted-foreground whitespace-nowrap">
                         Created
                       </th>
-                      {/* <th className="w-14 px-4 py-3 text-center text-[11px] font-medium text-muted-foreground whitespace-nowrap">
-                        Actions
-                      </th> */}
+                      <th className="w-14 px-4 py-3 text-center text-[11px] font-medium text-muted-foreground whitespace-nowrap">
+    Actions
+  </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -798,23 +799,23 @@ export default function DashboardPage() {
                             </span>
                           </td>
 
-                          {/* Actions: Quick Reprint
-                          <td className="px-4 py-3.5 text-center whitespace-nowrap">
-                            <div className="flex items-center justify-center">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-                                onClick={() =>
-                                  handlePrintSelected([job.jobId], job.printerId || reprintPrinterId)
-                                }
-                                disabled={isPrintingSelected}
-                                title="Print this SKU tag"
-                              >
-                                <Printer className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td> */}
+                          {/* Actions: Quick Reprint */}
+  <td className="px-4 py-3.5 text-center whitespace-nowrap">
+    <div className="flex items-center justify-center">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10 rounded-md transition-colors cursor-pointer"
+        onClick={() =>
+          handlePrintSelected([job.jobId], job.printerId || reprintPrinterId)
+        }
+        disabled={isPrintingSelected}
+        title="Reprint this label (Preserves SKU)"
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  </td>
                         </tr>
                       );
                     })}
@@ -859,72 +860,67 @@ export default function DashboardPage() {
             </Button>
 
             {/* Target Printer Dropdown */}
-            {/* <div ref={printerDropdownRef} className="relative">
-              <button
-                type="button"
-                onClick={() => setIsPrinterDropdownOpen((prev) => !prev)}
-                disabled={isPrintingSelected}
-                className="flex items-center gap-1.5 h-8 px-2.5 rounded-xl border border-input bg-background hover:bg-accent text-xs font-medium cursor-pointer transition-colors shadow-2xs focus:outline-hidden"
-                title="Target printer for reprinting"
-              >
-                <Printer className="h-3.5 w-3.5 text-primary shrink-0" />
-                <span className="font-semibold text-foreground">
-                  {printers.find((p) => p.id === reprintPrinterId)?.name || reprintPrinterId}
-                </span>
-                <ChevronDown
-                  className={`h-3 w-3 text-muted-foreground/70 shrink-0 transition-transform duration-200 ${
-                    isPrinterDropdownOpen ? "rotate-180 text-primary" : ""
-                  }`}
-                />
-              </button>
+  <div ref={printerDropdownRef} className="relative">
+    <button
+      type="button"
+      onClick={() => setIsPrinterDropdownOpen((prev) => !prev)}
+      disabled={isPrintingSelected}
+      className="flex items-center gap-1.5 h-8 px-2.5 rounded-xl border border-input bg-background hover:bg-accent text-xs font-medium cursor-pointer transition-colors shadow-2xs focus:outline-hidden"
+      title="Target printer for reprinting"
+    >
+      <Printer className="h-3.5 w-3.5 text-primary shrink-0" />
+      <span className="font-semibold text-foreground">
+        {printers.find((p) => p.id === reprintPrinterId)?.name || reprintPrinterId}
+      </span>
+      <ChevronDown
+        className={`h-3 w-3 text-muted-foreground/70 shrink-0 transition-transform duration-200 ${isPrinterDropdownOpen ? "rotate-180 text-primary" : ""}`}
+      />
+    </button>
 
-              {isPrinterDropdownOpen && (
-                <div className="absolute top-full mt-1.5 right-0 min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg z-50 animate-in fade-in-0 zoom-in-95 duration-100">
-                  {printers.map((p) => {
-                    const isSelected = p.id === reprintPrinterId;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => {
-                          setReprintPrinterId(p.id);
-                          try {
-                            localStorage.setItem("bj_selected_printer_id", p.id);
-                          } catch {}
-                          setIsPrinterDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-                          isSelected
-                            ? "bg-accent text-accent-foreground font-semibold"
-                            : "hover:bg-muted/70 text-foreground"
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <Printer className="h-3 w-3 text-muted-foreground" />
-                          {p.name}
-                        </span>
-                        {isSelected && <Check className="h-3.5 w-3.5 text-primary stroke-[2.5]" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div> */}
-
-            {/* Print Selected Button */}
-            {/* <Button
-              size="sm"
-              onClick={() => handlePrintSelected()}
-              disabled={isPrintingSelected}
-              className="h-8 gap-1.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-md shadow-primary/25 transition-all"
+    {isPrinterDropdownOpen && (
+      <div className="absolute top-full mt-1.5 right-0 min-w-40 rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg z-50 animate-in fade-in-0 zoom-in-95 duration-100">
+        {printers.map((p) => {
+          const isSelected = p.id === reprintPrinterId;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => {
+                setReprintPrinterId(p.id);
+                try {
+                  localStorage.setItem("bj_selected_printer_id", p.id);
+                } catch {}
+                setIsPrinterDropdownOpen(false);
+              }}
+              className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${isSelected ? "bg-accent text-accent-foreground font-semibold" : "hover:bg-muted/70 text-foreground"}`}
             >
-              {isPrintingSelected ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Printer className="h-3.5 w-3.5" />
-              )}
-              {isPrintingSelected ? "Sending…" : `Print Selected`}
-            </Button> */}
+              <span className="flex items-center gap-2">
+                <Printer className="h-3 w-3 text-muted-foreground" />
+                {p.name}
+              </span>
+              {isSelected && <Check className="h-3.5 w-3.5 text-primary stroke-[2.5]" />}
+            </button>
+          );
+        })}
+      </div>
+    )}
+  </div>
+
+  {/* Print Selected Button */}
+  <Button
+    size="sm"
+    onClick={() => handlePrintSelected()}
+    disabled={isPrintingSelected}
+    className="h-8 gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-md shadow-amber-600/25 transition-all cursor-pointer"
+    title="Reprint selected SKUs without generating new sequence numbers"
+  >
+    {isPrintingSelected ? (
+      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+    ) : (
+      <RotateCcw className="h-3.5 w-3.5" />
+    )}
+    {isPrintingSelected ? "Sending…" : `Reprint Selected (${selectedJobIds.size})`}
+  </Button>
 
             {/* Close Button */}
             <Button
