@@ -6,6 +6,7 @@ import {
   useRef,
   useTransition,
   useCallback,
+  useMemo,
   useId,
   ChangeEvent,
 } from "react";
@@ -41,6 +42,7 @@ import {
   Check,
   AlertTriangle,
   RotateCcw,
+  Minus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -664,6 +666,39 @@ function StatusBadge({ result }: { result: JobResult | null }) {
   );
 }
 
+// ── Ultra-Modern Custom Checkbox ───────────────────────────────────────────
+function ModernCheckbox({
+  checked,
+  indeterminate,
+  onChange,
+  title,
+}: {
+  checked: boolean;
+  indeterminate?: boolean;
+  onChange: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={indeterminate ? "mixed" : checked}
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChange();
+      }}
+      className={`group relative inline-flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-md border transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 cursor-pointer ${checked || indeterminate
+        ? "border-primary bg-primary text-primary-foreground shadow-xs shadow-primary/25"
+        : "border-border/80 bg-background/80 hover:border-primary/60 hover:bg-muted/40"
+      }`}
+    >
+      {checked && <Check className="h-3 w-3 stroke-3" />}
+      {indeterminate && !checked && <Minus className="h-3 w-3 stroke-3" />}
+    </button>
+  );
+}
+
 // ── JobRow ─────────────────────────────────────────────────────────────────
 
 function JobRow({
@@ -673,6 +708,8 @@ function JobRow({
   skuLoading,
   result,
   isSubmitting,
+  isSelected,
+  onToggleSelect,
   onChange,
   onRemove,
   onReprint,
@@ -683,6 +720,8 @@ function JobRow({
   skuLoading: boolean;
   result: JobResult | null;
   isSubmitting: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onChange: (patch: Partial<RowData>) => void;
   onRemove: () => void;
   onReprint?: (jobId: string, sku: string) => void;
@@ -778,19 +817,35 @@ function JobRow({
 
   return (
     <Card
-      className={`border-border/40 overflow-hidden transition-all ${result?.status === "success"
-        ? "border-emerald-500/30"
-        : result?.status === "error"
-          ? "border-destructive/30"
-          : ""
-        }`}
+      className={`overflow-hidden transition-all duration-150 ${
+        isSelected
+          ? "border-primary/50 shadow-xs ring-1 ring-primary/20 bg-card"
+          : "border-border/40 opacity-70 hover:opacity-100 bg-muted/5"
+      } ${
+        result?.status === "success"
+          ? "border-emerald-500/40"
+          : result?.status === "error"
+            ? "border-destructive/40"
+            : ""
+      }`}
     >
       {/* ── Row header ── */}
       <div
         className="flex items-center gap-3 px-4 py-3 cursor-pointer select-none bg-muted/10 hover:bg-muted/20 transition-colors"
         onClick={() => onChange({ expanded: !row.expanded })}
       >
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/15 text-[11px] font-bold text-primary shrink-0">
+        {/* Selection Checkbox */}
+        <ModernCheckbox
+          checked={isSelected}
+          onChange={onToggleSelect}
+          title={isSelected ? "Deselect this tag" : "Select this tag to print"}
+        />
+
+        <div className={`flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold shrink-0 transition-colors ${
+          isSelected
+            ? "bg-primary text-primary-foreground shadow-xs"
+            : "bg-muted text-muted-foreground"
+        }`}>
           {index + 1}
         </div>
 
@@ -1130,6 +1185,7 @@ export default function NewPrintJobPage() {
 
   const [isMounted, setIsMounted] = useState(false);
   const [rows, setRows] = useState<RowData[]>(() => [makeRow("init-row-1")]);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(() => new Set(["init-row-1"]));
   const [results, setResults] = useState<Map<string, JobResult>>(new Map());
   const [submitted, setSubmitted] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -1145,6 +1201,7 @@ export default function NewPrintJobPage() {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setRows(parsed);
+          setSelectedRowIds(new Set(parsed.map((r: RowData) => r.id)));
         }
       }
     } catch {
@@ -1162,6 +1219,31 @@ export default function NewPrintJobPage() {
     }
   }, [rows, isMounted]);
 
+  // ── Selection State & Helpers ──────────────────────────────────────────
+  const selectedRows = useMemo(() => {
+    return rows.filter((r) => selectedRowIds.has(r.id));
+  }, [rows, selectedRowIds]);
+
+  const isAllSelected = rows.length > 0 && rows.every((r) => selectedRowIds.has(r.id));
+  const isSomeSelected = rows.some((r) => selectedRowIds.has(r.id)) && !isAllSelected;
+
+  function toggleSelectAll() {
+    if (isAllSelected) {
+      setSelectedRowIds(new Set());
+    } else {
+      setSelectedRowIds(new Set(rows.map((r) => r.id)));
+    }
+  }
+
+  function toggleSelectRow(id: string) {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   // ── Excel Filename Modal & Print Flow ─────────────────────────────────────
   const [isNameModalOpen, setIsNameModalOpen] = useState(false);
   const [excelFileName, setExcelFileName] = useState("");
@@ -1170,7 +1252,7 @@ export default function NewPrintJobPage() {
 
   // ── Reprint Handler: Re-dispatches already generated SKUs to printer ───────
   async function handleReprintBatch() {
-    const successfulJobIds = rows
+    const successfulJobIds = selectedRows
       .map((r) => results.get(r.id))
       .filter(
         (res): res is { status: "success"; sku: string; jobId: string; mqttStatus: string } =>
@@ -1419,19 +1501,26 @@ export default function NewPrintJobPage() {
   }
 
   function addRow() {
+    const newId = uid();
     setRows((prev) => [
       ...prev,
-      makeRow(uid(), {
+      makeRow(newId, {
         metalType: batchMetalType.trim() || (prev[prev.length - 1]?.metalType ?? ""),
         metalPurity: batchMetalPurity.trim() || (prev[prev.length - 1]?.metalPurity ?? ""),
       }),
     ]);
+    setSelectedRowIds((prev) => new Set(prev).add(newId));
   }
 
   function removeRow(id: string) {
     setRows((prev) => {
       if (prev.length === 1) return prev;
       return prev.filter((r) => r.id !== id);
+    });
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
     });
   }
 
@@ -1561,6 +1650,7 @@ export default function NewPrintJobPage() {
       uniquePrefixes.forEach((p) => schedulePrefixFetch(p));
 
       setRows(parsedRows);
+      setSelectedRowIds(new Set(parsedRows.map((r) => r.id)));
       setResults(new Map());
       setSubmitted(false);
 
@@ -1677,9 +1767,13 @@ export default function NewPrintJobPage() {
   // ── Validation ───────────────────────────────────────────────────────────
 
   function validateAll(): string | null {
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      const prefix = rows.length > 1 ? `Row ${i + 1}: ` : "";
+    if (selectedRows.length === 0) {
+      return "Please select at least one tag to print.";
+    }
+    for (let i = 0; i < selectedRows.length; i++) {
+      const r = selectedRows[i];
+      const originalIndex = rows.findIndex((row) => row.id === r.id);
+      const prefix = selectedRows.length > 1 ? `Tag #${originalIndex + 1}: ` : "";
 
       // 1. Item Type (Compulsory)
       if (!r.prefix || !r.prefix.trim()) {
@@ -1721,7 +1815,7 @@ export default function NewPrintJobPage() {
       }
 
       // SKU preview validation
-      if (!computeDisplaySku(i)) {
+      if (!computeDisplaySku(originalIndex)) {
         return `${prefix}SKU preview still loading - wait a moment.`;
       }
     }
@@ -1738,7 +1832,7 @@ export default function NewPrintJobPage() {
     }
 
     setIsSavingPending(true);
-    const toastId = toast.loading(`Saving ${rows.length} job(s) to Recent Jobs...`);
+    const toastId = toast.loading(`Saving ${selectedRows.length} job(s) to Recent Jobs...`);
 
     try {
       setSubmitted(true);
@@ -1751,7 +1845,7 @@ export default function NewPrintJobPage() {
           printerId: selectedPrinterId,
           skipDriveUpload: true,
           saveOnly: true,
-          items: rows.map((row) => ({
+          items: selectedRows.map((row) => ({
             rowId: row.id,
             prefix: row.prefix.trim().toUpperCase(),
             designNumber: row.designNumber || undefined,
@@ -1823,9 +1917,9 @@ export default function NewPrintJobPage() {
       return;
     }
 
-    const firstPrefix = rows[0]?.prefix?.trim() || "BATCH";
+    const firstPrefix = selectedRows[0]?.prefix?.trim() || "BATCH";
     const dateStr = new Date().toISOString().slice(0, 10);
-    const defaultName = `BJ_Print_${firstPrefix}_${dateStr}_${rows.length}items.xlsx`;
+    const defaultName = `BJ_Print_${firstPrefix}_${dateStr}_${selectedRows.length}items.xlsx`;
     setExcelFileName(defaultName);
     setIsNameModalOpen(true);
   }
@@ -1845,9 +1939,9 @@ export default function NewPrintJobPage() {
 
     try {
       // 1. Prepare entries with preview SKUs
-      const entries = rows.map((row, i) => ({
+      const entries = selectedRows.map((row) => ({
         row,
-        displaySku: computeDisplaySku(i),
+        displaySku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
         result: null,
       }));
 
@@ -1896,7 +1990,7 @@ export default function NewPrintJobPage() {
             body: JSON.stringify({
               printerId: selectedPrinterId,
               skipDriveUpload: true, // Already uploaded batch Excel to Drive above
-              items: rows.map((row) => ({
+              items: selectedRows.map((row) => ({
                 rowId: row.id,
                 prefix: row.prefix.trim().toUpperCase(),
                 designNumber: row.designNumber || undefined,
@@ -1919,10 +2013,10 @@ export default function NewPrintJobPage() {
           const data = await res.json();
           if (!res.ok) {
             const errMsg = data.error ?? "Server error";
-            rows.forEach((row, idx) => {
+            selectedRows.forEach((row) => {
               newResults.set(row.id, {
                 status: "error",
-                sku: computeDisplaySku(idx),
+                sku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
                 message: errMsg,
               });
             });
@@ -1974,10 +2068,10 @@ export default function NewPrintJobPage() {
             }
           }
         } catch {
-          rows.forEach((row, idx) => {
+          selectedRows.forEach((row) => {
             newResults.set(row.id, {
               status: "error",
-              sku: computeDisplaySku(idx),
+              sku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
               message: "Network error",
             });
           });
@@ -1997,9 +2091,10 @@ export default function NewPrintJobPage() {
   // ── Manual Excel Export ──────────────────────────────────────────────────
 
   async function handleExcel() {
-    const entries = rows.map((row, i) => ({
+    const rowsToExport = selectedRows.length > 0 ? selectedRows : rows;
+    const entries = rowsToExport.map((row) => ({
       row,
-      displaySku: computeDisplaySku(i),
+      displaySku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
       result: results.get(row.id) ?? null,
     }));
     try {
@@ -2013,7 +2108,9 @@ export default function NewPrintJobPage() {
   // ── Reset / Clear ────────────────────────────────────────────────────────
 
   function executeClearForm() {
-    setRows([makeRow(uid())]);
+    const initialId = uid();
+    setRows([makeRow(initialId)]);
+    setSelectedRowIds(new Set([initialId]));
     setResults(new Map());
     setSkuCache({});
     setSubmitted(false);
@@ -2327,6 +2424,46 @@ export default function NewPrintJobPage() {
           </div>
         )}
 
+        {/* ── Selection Control Bar ── */}
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-card border border-border/50 text-xs shadow-2xs">
+          <div className="flex items-center gap-3">
+            <ModernCheckbox
+              checked={isAllSelected}
+              indeterminate={isSomeSelected}
+              onChange={toggleSelectAll}
+              title={isAllSelected ? "Deselect all tags" : "Select all tags"}
+            />
+            <span className="font-semibold text-foreground flex items-center gap-2">
+              <span>
+                {selectedRowIds.size === rows.length
+                  ? `All ${rows.length} Tags Selected`
+                  : `${selectedRowIds.size} of ${rows.length} Tags Selected`}
+              </span>
+              <span className="text-[11px] font-normal text-muted-foreground">
+                (Only selected tags will be printed)
+              </span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              onClick={toggleSelectAll}
+              className="text-xs text-primary hover:underline font-semibold cursor-pointer"
+            >
+              {isAllSelected ? "Deselect All" : "Select All"}
+            </button>
+            <span className="text-border/80">|</span>
+            <button
+              type="button"
+              onClick={toggleAllExpanded}
+              className="text-xs text-muted-foreground hover:text-foreground font-medium cursor-pointer"
+            >
+              {rows.every((r) => r.expanded) ? "Collapse All" : "Expand All"}
+            </button>
+          </div>
+        </div>
+
         {/* ── Job rows ── */}
         <div className="space-y-3">
           {rows.map((row, i) => (
@@ -2334,6 +2471,8 @@ export default function NewPrintJobPage() {
               key={row.id}
               row={row}
               index={i}
+              isSelected={selectedRowIds.has(row.id)}
+              onToggleSelect={() => toggleSelectRow(row.id)}
               displaySku={computeDisplaySku(i)}
               skuLoading={skuLoading[row.prefix.trim().toUpperCase()] ?? false}
               result={results.get(row.id) ?? null}
@@ -2363,7 +2502,11 @@ export default function NewPrintJobPage() {
             {/* Items Counter Pill */}
             <div className="flex items-center gap-1.5 px-3 h-9 rounded-xl bg-muted/60 border border-border/50 text-xs font-semibold text-foreground/80">
               <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-              <span>{rows.length} {rows.length === 1 ? "Item" : "Items"}</span>
+              <span>
+                {selectedRows.length === rows.length
+                  ? `${rows.length} Items`
+                  : `${selectedRows.length} / ${rows.length} Selected`}
+              </span>
             </div>
 
             {/* Add Item Button */}
