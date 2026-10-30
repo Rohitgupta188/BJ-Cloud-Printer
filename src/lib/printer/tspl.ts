@@ -61,7 +61,6 @@ export function generateTsplPayload(item: TsplItemPayloadInput): string {
     `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
     `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
     `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
-    `TEXT 565,42,"0",180,9,9,"${dNo}/${gWt}"`,
     `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
     `TEXT 180,45,"ROMAN.TTF",180,1,6,"${metal}"`,
     "PRINT 1,1",
@@ -127,7 +126,6 @@ export function generateTsplBatchPayload(items: TsplItemPayloadInput[]): string 
       `QRCODE 150,100,H,3,A,180,M2,S7,"${sku}"`,
       `TEXT 230,85,"ROMAN.TTF",180,1,6,"G.Wt: ${gWt}"`,
       `TEXT 230,65,"ROMAN.TTF",180,1,6,"N Wt: ${nWt}"`,
-      `TEXT 565,42,"0",180,9,9,"${dNo}/${gWt}"`,
       `TEXT 230,45,"ROMAN.TTF",180,1,6,"KT: ${purity}"`,
       `TEXT 180,45,"ROMAN.TTF",180,1,6,"${metal}"`,
       "PRINT 1,1"
