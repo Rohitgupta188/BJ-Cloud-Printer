@@ -2142,12 +2142,21 @@ export default function NewPrintJobPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  const allDone = submitted && results.size === rows.length;
-  const successCount = [...results.values()].filter(
-    (r) => r.status === "success"
+  const isSelectedAllDone =
+    submitted &&
+    selectedRows.length > 0 &&
+    selectedRows.every((r) => results.has(r.id));
+
+  const allDone = isSelectedAllDone;
+
+  const selectedSuccessCount = selectedRows.filter(
+    (r) => results.get(r.id)?.status === "success"
   ).length;
-  const failCount = [...results.values()].filter(
-    (r) => r.status === "error"
+
+  const successCount = selectedSuccessCount;
+
+  const failCount = selectedRows.filter(
+    (r) => results.get(r.id)?.status === "error"
   ).length;
   const hasAnyPrefix = rows.some((r) => r.prefix.trim().length > 0);
 
@@ -2407,9 +2416,8 @@ export default function NewPrintJobPage() {
             )}
             <p className="flex-1 text-sm font-medium">
               {isPending
-                ? `Submitting… ${results.size} / ${rows.length}`
-                : `Done — ${successCount} of ${rows.length} job${rows.length > 1 ? "s" : ""
-                } created`}
+                ? `Submitting… ${results.size} / ${selectedRows.length}`
+                : `Done — ${selectedSuccessCount} of ${selectedRows.length} tag${selectedRows.length > 1 ? "s" : ""} printed`}
             </p>
             {successCount > 0 && (
               <Badge className="text-[10px] bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
@@ -2630,15 +2638,15 @@ export default function NewPrintJobPage() {
             </Button>
 
             {/* Primary Actions: Print vs Reprint */}
-            {allDone ? (
+            {isSelectedAllDone ? (
               <div className="flex items-center gap-2">
                 {/* Reprint Button - Preserves Existing SKUs */}
                 <Button
                   id="reprint-batch-btn"
                   className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-amber-600/20 hover:shadow-amber-600/30 transition-all cursor-pointer bg-amber-600 hover:bg-amber-700 text-white min-w-36"
                   onClick={handleReprintBatch}
-                  disabled={isReprinting || isPending || isSavingPending}
-                  title="Reprint the exact same labels with existing SKUs (no new SKUs generated)"
+                  disabled={isReprinting || isPending || isSavingPending || selectedRows.length === 0}
+                  title="Reprint the selected labels with existing SKUs (no new SKUs generated)"
                 >
                   {isReprinting ? (
                     <>
@@ -2648,7 +2656,9 @@ export default function NewPrintJobPage() {
                   ) : (
                     <>
                       <RotateCcw className="h-3.5 w-3.5" />
-                      Reprint Labels ({successCount})
+                      {selectedRows.length === 1
+                        ? "Reprint 1 Selected Tag"
+                        : `Reprint ${selectedRows.length} Selected Tags`}
                     </>
                   )}
                 </Button>
@@ -2659,11 +2669,13 @@ export default function NewPrintJobPage() {
                   variant="outline"
                   className="h-9 px-3 gap-1.5 rounded-xl text-xs font-semibold hover:bg-accent cursor-pointer"
                   onClick={handleSubmit}
-                  disabled={isPending || isSavingPending || isReprinting}
+                  disabled={isPending || isSavingPending || isReprinting || selectedRows.length === 0}
                   title="Assigns brand new sequential SKUs for new physical pieces"
                 >
                   <Sparkles className="h-3.5 w-3.5 text-primary" />
-                  Print as New Batch (New SKUs)
+                  {selectedRows.length === 1
+                    ? "Print 1 New Tag"
+                    : `Print ${selectedRows.length} New Tags`}
                 </Button>
               </div>
             ) : (
@@ -2671,17 +2683,32 @@ export default function NewPrintJobPage() {
                 id="submit-batch-btn"
                 className="h-9 px-4 gap-2 rounded-xl font-semibold text-xs shadow-md shadow-primary/20 hover:shadow-primary/30 transition-all cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90 min-w-36"
                 onClick={handleSubmit}
-                disabled={isPending || isSavingPending || !hasAnyPrefix}
+                disabled={isPending || isSavingPending || !hasAnyPrefix || selectedRows.length === 0}
               >
                 {isPending ? (
                   <>
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Printing {results.size + 1} / {rows.length}…
+                    Printing {selectedRows.length} Tag{selectedRows.length > 1 ? "s" : ""}…
+                  </>
+                ) : selectedRows.length === 0 ? (
+                  <>
+                    <Printer className="h-3.5 w-3.5" />
+                    Select Tags to Print
+                  </>
+                ) : selectedRows.length === 1 ? (
+                  <>
+                    <Printer className="h-3.5 w-3.5" />
+                    Print 1 Tag
+                  </>
+                ) : selectedRows.length === rows.length ? (
+                  <>
+                    <Printer className="h-3.5 w-3.5" />
+                    Print All {rows.length} Tags
                   </>
                 ) : (
                   <>
                     <Printer className="h-3.5 w-3.5" />
-                    Print {rows.length} Job{rows.length > 1 ? "s" : ""}
+                    Print {selectedRows.length} Selected Tags
                   </>
                 )}
               </Button>
