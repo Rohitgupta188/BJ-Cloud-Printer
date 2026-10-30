@@ -10,12 +10,22 @@ export interface TsplItemPayloadInput {
   bsWeight?: string | number;
 }
 
-function formatTsplWeight(val?: string | number, fallback = ""): string {
+function formatTsplWeight(val?: string | number, fallback = "0.000"): string {
   if (val === undefined || val === null) return fallback;
   const str = String(val).trim();
   if (str === "") return fallback;
   const num = Number(str);
-  if (!isNaN(num) && num === 0) return "0.000";
+  if (isNaN(num)) return str;
+  if (num === 0) return "0.000";
+
+  // Jewelry weights require at least 3 decimal places (e.g. 3.85 -> 3.850).
+  // If fewer than 3 decimal places are present, pad with zeros using toFixed(3).
+  // If 3 or more decimal places already exist, preserve them intact.
+  const dotIndex = str.indexOf(".");
+  const decimalCount = dotIndex === -1 ? 0 : str.length - dotIndex - 1;
+  if (decimalCount < 3) {
+    return num.toFixed(3);
+  }
   return str;
 }
 
