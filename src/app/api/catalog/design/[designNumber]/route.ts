@@ -3,6 +3,7 @@ import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb } from "@/lib/db/printer";
 import { getCatalogModel } from "@/models/catalog/Catalog";
+import { getImageIndexModel } from "@/models/catalog/ImageIndex";
 import { success, error, notFound, serverError } from "@/lib/api-handling/api-response";
 
 type Ctx = { params: Promise<{ designNumber: string }> };
@@ -54,6 +55,40 @@ export const GET = withAuth<Ctx>(async (request: NextRequest, ctx) => {
 
     if (!item) {
       item = await Catalog.findOne(query, projection).lean();
+    }
+
+    // ── Fallback: image_index collection for imageUrl ──────────────────────
+    // If catalog found the item but has no imageUrl, or if catalog didn't find
+    // the item at all, try the image_index collection which indexes all product
+    // images with their Backblaze URLs.
+    if (!item?.imageUrl) {
+      try {
+        const ImageIndex = getImageIndexModel(connection);
+        const imgDoc = await ImageIndex.findOne(
+          {
+            imageName: { $regex: `^${escapedDn}(\\.jpg)?$`, $options: "i" },
+            uploadStatus: "UPLOADED",
+            imageUrl: { $exists: true, $ne: null },
+          },
+          { imageUrl: 1, imageName: 1, _id: 0 }
+        ).lean();
+
+        if (imgDoc?.imageUrl) {
+          if (item) {
+            // Catalog item exists but lacks imageUrl — enrich it
+            item.imageUrl = imgDoc.imageUrl;
+          } else {
+            // No catalog item at all — create a minimal result from image_index
+            item = {
+              designNumber: dn,
+              imageName: imgDoc.imageName || `${dn}.jpg`,
+              imageUrl: imgDoc.imageUrl,
+            } as any;
+          }
+        }
+      } catch (imgErr) {
+        console.error("[GET /api/catalog/design] Error checking image_index:", imgErr);
+      }
     }
 
     // Check DesignWeight model in printer database (BJ-Printer)
