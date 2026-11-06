@@ -59,9 +59,8 @@ function LoginForm() {
 
       const next = searchParams.get("next");
       const destination =
-        next && next.startsWith("/") && !next.startsWith("//") ? next : "/";
+        next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
       router.push(destination);
-      router.refresh();
     } catch {
       setError("Network error. Please check your connection and try again.");
     } finally {
