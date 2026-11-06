@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { z } from "zod";
 import { auditLog, rateLimit, validateCsrf } from "@/lib/security";
 import { requireClientIp } from "@/lib/security";
-import { loginUser, sanitizeUser, setAuthCookies } from "@/lib/auth";
+import { loginUser, pruneOldSessions, sanitizeUser, setAuthCookies } from "@/lib/auth";
 import {
   forbidden,
   tooManyRequests,
@@ -17,6 +17,7 @@ const LoginSchema = z.object({
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const reqStart = performance.now();
   const ip = requireClientIp(request);
   const traceId = crypto.randomUUID();
 
@@ -29,7 +30,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return forbidden();
   }
 
+  const rlStart = performance.now();
   const rl = await rateLimit.login(ip);
+  const rlMs = Math.round(performance.now() - rlStart);
+
   if (!rl.success) {
     auditLog.emit("RATE_LIMIT_EXCEEDED", request, {
       ip,
@@ -63,6 +67,35 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     });
     return error("Invalid email or password", 401);
   }
+
+  // Safe background session pruning using Next.js after()
+  // Guarantees Vercel serverless keeps function alive until completed
+  // while returning the HTTP login response to the user instantly.
+  after(async () => {
+    try {
+      const pruneStart = performance.now();
+      await pruneOldSessions(result.user._id.toString(), result.sid);
+      const pruneMs = Math.round(performance.now() - pruneStart);
+      console.log(`[AUTH_TIMING] background_prune=${pruneMs}ms traceId=${traceId}`);
+    } catch (err) {
+      console.error("[login] Session pruning error:", err);
+    }
+  });
+
+  const totalMs = Math.round(performance.now() - reqStart);
+  console.log(
+    JSON.stringify({
+      event: "AUTH_LOGIN_PERF",
+      traceId,
+      totalMs,
+      rateLimitMs: rlMs,
+      dbInitMs: result.timings?.dbInitMs ?? 0,
+      userLookupMs: result.timings?.userLookupMs ?? 0,
+      bcryptMs: result.timings?.bcryptMs ?? 0,
+      tokenSignMs: result.timings?.tokenSignMs ?? 0,
+      sessionCreateMs: result.timings?.sessionCreateMs ?? 0,
+    })
+  );
 
   auditLog.emit("AUTH_LOGIN_SUCCESS", request, {
     ip,
