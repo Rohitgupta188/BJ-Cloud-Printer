@@ -36,4 +36,6 @@ export {
   logoutUser,
   sanitizeUser,
   rotateRefreshToken,
+  pruneOldSessions,
+  type LoginTimings,
 } from "./auth.service";

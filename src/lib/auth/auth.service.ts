@@ -5,6 +5,14 @@ import { verifyPassword } from "./password";
 import { signTokenPair, hashToken, verifyToken, type JwtPayload } from "./jwt";
 import { clearAuthCookies } from "./cookies";
 
+export interface LoginTimings {
+  dbInitMs: number;
+  userLookupMs: number;
+  bcryptMs: number;
+  tokenSignMs: number;
+  sessionCreateMs: number;
+}
+
 type AuthResult =
   | { 
       ok: true;
@@ -12,6 +20,7 @@ type AuthResult =
       accessToken: string;
       refreshToken: string;
       sid: string;
+      timings?: LoginTimings;
     }
   | {
       ok: false;
@@ -23,17 +32,26 @@ type AuthResult =
 const MAX_SESSIONS = 5;
 const CONCURRENT_REFRESH_GRACE_MS = 60_000;
 
-async function pruneOldSessions(userId: string): Promise<void> {
+export async function pruneOldSessions(userId: string, currentSessionId?: string): Promise<void> {
   const { PrinterSession } = await getPrinterModels();
 
   const sessions = await PrinterSession.find({ userId })
     .sort({ createdAt: -1 })
-    .select("_id")
+    .select("_id sessionId")
     .lean();
 
   if (sessions.length > MAX_SESSIONS) {
-    const idsToDelete = sessions.slice(MAX_SESSIONS).map((s) => s._id);
-    await PrinterSession.deleteMany({ _id: { $in: idsToDelete } });
+    // Preserve current active session from deletion even under concurrent requests or clock variations
+    const candidates = currentSessionId
+      ? sessions.filter((s) => s.sessionId !== currentSessionId)
+      : sessions;
+
+    const allowedOld = currentSessionId ? MAX_SESSIONS - 1 : MAX_SESSIONS;
+    const idsToDelete = candidates.slice(allowedOld).map((s) => s._id);
+
+    if (idsToDelete.length > 0) {
+      await PrinterSession.deleteMany({ _id: { $in: idsToDelete } });
+    }
   }
 }
 
@@ -41,17 +59,24 @@ export async function loginUser(data: {
   email: string;
   password: string;
 }): Promise<AuthResult> {
-  const { User } = await getCatalogModels();
+  const t0 = performance.now();
+  const [{ User }, { PrinterSession }] = await Promise.all([
+    getCatalogModels(),
+    getPrinterModels(),
+  ]);
+  const t1 = performance.now();
 
   const user = await User.findOne({ email: data.email.toLowerCase() }).select(
     "+password"
   );
+  const t2 = performance.now();
 
   if (!user) {
     return { ok: false, error: "INVALID_CREDENTIALS", status: 401 };
   }
 
   const isValid = await verifyPassword(data.password, user.password);
+  const t3 = performance.now();
   if (!isValid) {
     return { ok: false, error: "INVALID_CREDENTIALS", status: 401 };
   }
@@ -65,18 +90,24 @@ export async function loginUser(data: {
 
   const { accessToken, refreshToken, sid } = await signTokenPair(tokenBase);
   const refreshTokenHash = await hashToken(refreshToken);
-
-  const { PrinterSession } = await getPrinterModels();
+  const t4 = performance.now();
 
   await PrinterSession.create({
     userId: user._id.toString(),
     sessionId: sid,
     refreshTokenHash,
   });
+  const t5 = performance.now();
 
-  await pruneOldSessions(user._id.toString());
+  const timings: LoginTimings = {
+    dbInitMs: Math.round(t1 - t0),
+    userLookupMs: Math.round(t2 - t1),
+    bcryptMs: Math.round(t3 - t2),
+    tokenSignMs: Math.round(t4 - t3),
+    sessionCreateMs: Math.round(t5 - t4),
+  };
 
-  return { ok: true, user, accessToken, refreshToken, sid };
+  return { ok: true, user, accessToken, refreshToken, sid, timings };
 }
 
 export async function logoutUser(userId: string, sid?: string): Promise<void> {
