@@ -713,6 +713,8 @@ function JobRow({
   onChange,
   onRemove,
   onReprint,
+  autoFocusPrefix,
+  onFocusHandled,
 }: {
   row: RowData;
   index: number;
@@ -725,11 +727,22 @@ function JobRow({
   onChange: (patch: Partial<RowData>) => void;
   onRemove: () => void;
   onReprint?: (jobId: string, sku: string) => void;
+  autoFocusPrefix?: boolean;
+  onFocusHandled?: () => void;
 }) {
   const baseId = useId();
   const designTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rowRef = useRef(row);
   rowRef.current = row;
+  const prefixInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocusPrefix && prefixInputRef.current) {
+      prefixInputRef.current.focus();
+      prefixInputRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      onFocusHandled?.();
+    }
+  }, [autoFocusPrefix, onFocusHandled]);
 
   const previewSkuToDisplay = formatPrinterSku(displaySku);
   const successSkuToDisplay =
@@ -909,6 +922,7 @@ function JobRow({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <Field label="Item Type *" id={id("prefix")}>
                   <Input
+                    ref={prefixInputRef}
                     id={id("prefix")}
                     value={row.prefix}
                     onChange={(e) =>
@@ -1191,6 +1205,7 @@ export default function NewPrintJobPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSavingPending, setIsSavingPending] = useState(false);
+  const [focusRowId, setFocusRowId] = useState<string | null>(null);
 
   // Load saved draft safely on client mount (prevents SSR hydration mismatch)
   useEffect(() => {
@@ -1510,6 +1525,7 @@ export default function NewPrintJobPage() {
       }),
     ]);
     setSelectedRowIds((prev) => new Set(prev).add(newId));
+    setFocusRowId(newId);
   }
 
   function removeRow(id: string) {
@@ -2485,6 +2501,8 @@ export default function NewPrintJobPage() {
               skuLoading={skuLoading[row.prefix.trim().toUpperCase()] ?? false}
               result={results.get(row.id) ?? null}
               isSubmitting={isPending}
+              autoFocusPrefix={focusRowId === row.id}
+              onFocusHandled={() => setFocusRowId(null)}
               onChange={(patch) => {
                 if (patch.prefix !== undefined && patch.prefix !== row.prefix) {
                   handlePrefixChange(row.id, patch.prefix);
