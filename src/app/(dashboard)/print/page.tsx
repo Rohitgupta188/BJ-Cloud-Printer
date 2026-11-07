@@ -45,6 +45,7 @@ import {
   Minus,
 } from "lucide-react";
 import Link from "next/link";
+import { formatPrinterSku, offsetSku } from "@/lib/sku/sku-utils";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -103,30 +104,7 @@ const DEFAULT_PRINTERS: PrinterOption[] = [
   { id: "mumbai-03", name: "Mumbai Printer 03", description: "Shop Floor — Station 03", isDefault: false },
 ];
 
-// ── SKU helpers ────────────────────────────────────────────────────────────
-
-/**
- * Format a SKU for the printer UI preview and physical label (prefixes '1' if not already present).
- */
-function formatPrinterSku(sku?: string): string {
-  if (!sku) return "";
-  const s = sku.trim();
-  if (!s) return "";
-  return s.startsWith("1") ? s : `1${s}`;
-}
-
-/**
- * Given a base SKU like "TRTP5614" and an offset, returns "TRTP5615", "TRTP5616" etc.
- * Preserves zero-padding width.
- */
-function offsetSku(baseSku: string, offset: number): string {
-  if (offset === 0) return baseSku;
-  const match = baseSku.match(/^(.*?)(\d+)$/);
-  if (!match) return baseSku;
-  const [, prefix, numStr] = match;
-  const next = String(Number(numStr) + offset).padStart(numStr.length, "0");
-  return prefix + next;
-}
+// Note: formatPrinterSku and offsetSku are imported from @/lib/sku/sku-utils
 
 // ── Cell extraction & normalization for Excel ──────────────────────────────
 
@@ -1951,151 +1929,158 @@ export default function NewPrintJobPage() {
     }
 
     setIsProcessingBatch(true);
-    const toastId = toast.loading("Generating Excel file...");
+    setIsNameModalOpen(false);
+    const toastId = toast.loading("Allocating SKUs and submitting print batch...");
 
     try {
-      // 1. Prepare entries with preview SKUs
-      const entries = selectedRows.map((row) => ({
-        row,
-        displaySku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
-        result: null,
-      }));
+      setSubmitted(true);
+      const newResults = new Map<string, JobResult>();
 
-      // 2. Build workbook and automatically download the Excel file
+      // 1. Submit print batch to backend FIRST to allocate real atomic SKUs in MongoDB
+      const res = await authFetch("/api/print-jobs/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({
+          printerId: selectedPrinterId,
+          skipDriveUpload: true, // Excel is built using confirmed server SKUs below
+          items: selectedRows.map((row) => ({
+            rowId: row.id,
+            prefix: row.prefix.trim().toUpperCase(),
+            designNumber: row.designNumber || undefined,
+            imageName:
+              row.imageName?.trim() || (row.designNumber ? `${row.designNumber.trim()}.jpg` : "unknown.jpg"),
+            itemStatus: "INSTOCK",
+            grossWeight: row.grossWeight || undefined,
+            netWeight: row.netWeight || undefined,
+            stoneWeight: (row.stoneWeight && row.stoneWeight.trim() !== "" && parseFloat(row.stoneWeight) > 0) ? row.stoneWeight : "0.000",
+            metalType: row.metalType || undefined,
+            metalPurity: row.metalPurity || undefined,
+            collectionLine: row.collectionLine || undefined,
+            imageUrl: row.imageUrl || undefined,
+            reserved1: (row.reserved1 && row.reserved1.trim() !== "") ? row.reserved1 : "0.000",
+            reserved3: (row.reserved3 && row.reserved3.trim() !== "") ? row.reserved3 : "0.000",
+          })),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        const errMsg = data.error ?? "Server error submitting print batch";
+        selectedRows.forEach((row) => {
+          newResults.set(row.id, {
+            status: "error",
+            sku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
+            message: errMsg,
+          });
+        });
+        setResults(new Map(newResults));
+        toast.error(errMsg, { id: toastId });
+        return;
+      }
+
+      // 2. Process server-confirmed SKUs and printer responses
+      const jobs = data.data.jobs as Array<{
+        rowId: string;
+        jobId: string;
+        sku: string;
+        status: string;
+      }>;
+
+      const cacheUpdates: Record<string, string> = {};
+      const confirmedJobMap = new Map<string, { sku: string; jobId: string; status: string }>();
+
+      for (const job of jobs) {
+        confirmedJobMap.set(job.rowId, job);
+
+        if (job.status === "MQTT_FAILED") {
+          newResults.set(job.rowId, {
+            status: "error",
+            sku: job.sku,
+            message: "MQTT publish failed",
+          });
+        } else {
+          newResults.set(job.rowId, {
+            status: "success",
+            sku: job.sku,
+            jobId: job.jobId,
+            mqttStatus: job.status,
+          });
+        }
+
+        const r = rows.find((row) => row.id === job.rowId);
+        if (r?.prefix) {
+          cacheUpdates[r.prefix.toUpperCase()] = job.sku;
+        }
+      }
+
+      if (Object.keys(cacheUpdates).length > 0) {
+        setSkuCache((prev) => ({ ...prev, ...cacheUpdates }));
+      }
+      setResults(new Map(newResults));
+
+      // 3. Build the Excel file using the confirmed, server-assigned SKUs (ensures 100% label-to-excel parity)
+      toast.loading("Building Excel file with confirmed SKUs...", { id: toastId });
+
+      const confirmedEntries = selectedRows.map((row) => {
+        const job = confirmedJobMap.get(row.id);
+        const confirmedSku = job?.sku || computeDisplaySku(rows.findIndex((r) => r.id === row.id));
+        return {
+          row,
+          displaySku: confirmedSku,
+          result: newResults.get(row.id) ?? null,
+        };
+      });
+
+      // 4. Download confirmed Excel file locally
       const { blob, fileName: finalName } = await generateAndDownloadBatchExcel(
-        entries,
+        confirmedEntries,
         cleanName
       );
 
+      // 5. Upload confirmed Excel file to Google Drive
       toast.loading(`Saving "${finalName}" to Google Drive...`, { id: toastId });
 
-      // 3. Upload the Excel file directly to Google Drive
-      const formData = new FormData();
-      formData.append("file", blob, finalName);
-      formData.append("fileName", finalName);
+      try {
+        const formData = new FormData();
+        formData.append("file", blob, finalName);
+        formData.append("fileName", finalName);
 
-      const driveRes = await authFetch("/api/print-jobs/upload-excel", {
-        method: "POST",
-        headers: csrfHeaders(),
-        body: formData,
-      });
+        const driveRes = await authFetch("/api/print-jobs/upload-excel", {
+          method: "POST",
+          headers: csrfHeaders(),
+          body: formData,
+        });
 
-      if (!driveRes.ok) {
-        const driveData = await driveRes.json().catch(() => ({}));
-        console.error("[Drive upload error]", driveData);
+        if (!driveRes.ok) {
+          const driveData = await driveRes.json().catch(() => ({}));
+          console.error("[Drive upload error]", driveData);
+          toast.warning(
+            driveData.error || "Excel downloaded locally. (Google Drive upload failed)",
+            { id: toastId, duration: 8000 }
+          );
+        } else {
+          const ok = jobs.filter((j) => j.status === "MQTT_PUBLISHED").length;
+          const fail = jobs.length - ok;
+          if (fail === 0) {
+            toast.success(
+              `${ok} tag${ok > 1 ? "s" : ""} printed! Excel saved to Drive & downloaded.`,
+              { id: toastId }
+            );
+          } else {
+            toast.warning(
+              `${ok} printed, ${fail} failed. Excel saved to Drive & downloaded.`,
+              { id: toastId }
+            );
+          }
+        }
+      } catch (driveErr) {
+        console.error("[Drive network error]", driveErr);
         toast.warning(
-          driveData.error || "Excel downloaded locally. (Google Drive upload failed)",
+          "Excel downloaded locally. (Google Drive upload network error)",
           { id: toastId, duration: 8000 }
         );
-      } else {
-        toast.success("Excel saved to Google Drive & downloaded!", { id: toastId });
       }
-
-      // Close modal now that file is named, downloaded, and uploaded to Drive
-      setIsNameModalOpen(false);
-
-      // 4. Send batch to API & MQTT in ONE atomic request!
-      startTransition(async () => {
-        setSubmitted(true);
-        const newResults = new Map<string, JobResult>();
-
-        try {
-          const res = await authFetch("/api/print-jobs/batch", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...csrfHeaders() },
-            body: JSON.stringify({
-              printerId: selectedPrinterId,
-              skipDriveUpload: true, // Already uploaded batch Excel to Drive above
-              items: selectedRows.map((row) => ({
-                rowId: row.id,
-                prefix: row.prefix.trim().toUpperCase(),
-                designNumber: row.designNumber || undefined,
-                imageName:
-              row.imageName?.trim() || (row.designNumber ? `${row.designNumber.trim()}.jpg` : "unknown.jpg"),
-                itemStatus: "INSTOCK",
-                grossWeight: row.grossWeight || undefined,
-                netWeight: row.netWeight || undefined,
-                stoneWeight: (row.stoneWeight && row.stoneWeight.trim() !== "" && parseFloat(row.stoneWeight) > 0) ? row.stoneWeight : "0.000",
-                metalType: row.metalType || undefined,
-                metalPurity: row.metalPurity || undefined,
-                collectionLine: row.collectionLine || undefined,
-                imageUrl: row.imageUrl || undefined,
-                reserved1: (row.reserved1 && row.reserved1.trim() !== "") ? row.reserved1 : "0.000",
-                reserved3: (row.reserved3 && row.reserved3.trim() !== "") ? row.reserved3 : "0.000",
-              })),
-            }),
-          });
-
-          const data = await res.json();
-          if (!res.ok) {
-            const errMsg = data.error ?? "Server error";
-            selectedRows.forEach((row) => {
-              newResults.set(row.id, {
-                status: "error",
-                sku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
-                message: errMsg,
-              });
-            });
-            toast.error(errMsg);
-          } else {
-            const jobs = data.data.jobs as Array<{
-              rowId: string;
-              jobId: string;
-              sku: string;
-              status: string;
-            }>;
-
-            const cacheUpdates: Record<string, string> = {};
-            for (const job of jobs) {
-              if (job.status === "MQTT_FAILED") {
-                newResults.set(job.rowId, {
-                  status: "error",
-                  sku: job.sku,
-                  message: "MQTT publish failed",
-                });
-              } else {
-                newResults.set(job.rowId, {
-                  status: "success",
-                  sku: job.sku,
-                  jobId: job.jobId,
-                  mqttStatus: job.status,
-                });
-              }
-              const r = rows.find((row) => row.id === job.rowId);
-              if (r?.prefix) {
-                cacheUpdates[r.prefix.toUpperCase()] = job.sku;
-              }
-            }
-
-            if (Object.keys(cacheUpdates).length > 0) {
-              setSkuCache((prev) => ({ ...prev, ...cacheUpdates }));
-            }
-
-            const ok = jobs.filter((j) => j.status === "MQTT_PUBLISHED").length;
-            const fail = jobs.length - ok;
-            if (fail === 0) {
-              toast.success(
-                `${ok} tag${ok > 1 ? "s" : ""} sent to printer in 1 smooth continuous stream!`
-              );
-            } else if (ok === 0) {
-              toast.error(`All ${fail} print jobs failed.`);
-            } else {
-              toast.warning(`${ok} printed, ${fail} failed.`);
-            }
-          }
-        } catch {
-          selectedRows.forEach((row) => {
-            newResults.set(row.id, {
-              status: "error",
-              sku: computeDisplaySku(rows.findIndex((r) => r.id === row.id)),
-              message: "Network error",
-            });
-          });
-          toast.error("Network error while submitting print batch.");
-        }
-
-        setResults(new Map(newResults));
-      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to process print batch";
       toast.error(msg, { id: toastId });
@@ -2253,7 +2238,7 @@ export default function NewPrintJobPage() {
       {/* ── Scrollable Form Body ── */}
       <div className="flex-1 max-w-6xl w-full space-y-4 px-8 py-8 pb-32">
         {/* ── Quick Import Banner & Drag-and-drop zone ── */}
-        {/* <div
+        <div
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragging(true);
@@ -2313,7 +2298,7 @@ export default function NewPrintJobPage() {
               </Button>
             </div>
           </div>
-        </div> */}
+        </div> 
 
         {/* ── Batch Defaults (Metal Type & Purity) ── */}
         <div className="rounded-xl border border-border/50 bg-card p-4 shadow-xs">
