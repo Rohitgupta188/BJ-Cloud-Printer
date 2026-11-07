@@ -1,23 +1,51 @@
 import type { Connection } from "mongoose";
 import { getSkuSequenceModel } from "@/models/printer/SkuSequence";
 import { getCatalogModel } from "@/models/catalog/Catalog";
+import { getPrintJobModel } from "@/models/printer/PrintJob";
+import { buildSkuQueryRegex, parseSkuSequence } from "./sku-utils";
 
-function escapeRegex(text: string): string {
-  return text.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
-}
+/**
+ * Finds the highest sequence number for a prefix across both the Catalog DB
+ * and existing PrintJobs in the Printer DB. Handles both "PREFIX123" and "1PREFIX123".
+ */
+export async function findMaxExistingSequence(
+  prefix: string,
+  catalogConn: Connection,
+  printerConn?: Connection
+): Promise<number> {
+  const upper = prefix.toUpperCase().trim();
+  const mongoRegex = buildSkuQueryRegex(upper);
 
-async function findCatalogMax(prefix: string, catalogConn: Connection): Promise<number> {
-  const regex = { $regex: `^${escapeRegex(prefix)}(\\d+)$`, $options: "" };
-
-  const docs = await getCatalogModel(catalogConn)
-    .find({ sku: regex }, { sku: 1, _id: 0 })
+  const catalogDocsPromise = getCatalogModel(catalogConn)
+    .find({ sku: mongoRegex }, { sku: 1, _id: 0 })
     .lean();
 
+  const printJobsPromise = printerConn
+    ? getPrintJobModel(printerConn)
+        .find({ sku: mongoRegex }, { sku: 1, _id: 0 })
+        .lean()
+    : Promise.resolve([]);
+
+  const [catalogDocs, jobDocs] = await Promise.all([
+    catalogDocsPromise,
+    printJobsPromise,
+  ]);
+
   let max = 0;
-  for (const doc of docs) {
-    const n = parseInt(doc.sku.slice(prefix.length), 10);
-    if (!isNaN(n) && n > max) max = n;
+  for (const doc of catalogDocs) {
+    if (doc.sku) {
+      const seq = parseSkuSequence(doc.sku, upper);
+      if (seq !== null && seq > max) max = seq;
+    }
   }
+
+  for (const doc of jobDocs) {
+    if (doc.sku) {
+      const seq = parseSkuSequence(doc.sku, upper);
+      if (seq !== null && seq > max) max = seq;
+    }
+  }
+
   return max;
 }
 
@@ -29,20 +57,23 @@ export interface GenerateSkuOptions {
 
 export async function generateSku(options: GenerateSkuOptions): Promise<string> {
   const { catalogConn, printerConn, prefix } = options;
-  const upper = prefix.toUpperCase();
+  const upper = prefix.toUpperCase().trim();
   const SkuSequence = getSkuSequenceModel(printerConn);
 
-  const exists = await SkuSequence.exists({ prefix: upper });
+  // 1. Find the highest existing SKU in Catalog DB or PrintJobs
+  const maxExisting = await findMaxExistingSequence(upper, catalogConn, printerConn);
 
-  if (!exists) {
-    const catalogMax = await findCatalogMax(upper, catalogConn);
-    await SkuSequence.findOneAndUpdate(
-      { prefix: upper },
-      { $setOnInsert: { seq: catalogMax } },
-      { upsert: true, returnDocument: "after" }
-    );
-  }
+  // 2. Ensure SkuSequence.seq is at least maxExisting atomically ($max only increases, never rolls back)
+  await SkuSequence.findOneAndUpdate(
+    { prefix: upper },
+    {
+      $setOnInsert: { prefix: upper },
+      $max: { seq: maxExisting },
+    },
+    { upsert: true, returnDocument: "after" }
+  );
 
+  // 3. Atomically allocate the next sequence number
   const result = await SkuSequence.findOneAndUpdate(
     { prefix: upper },
     { $inc: { seq: 1 } },
@@ -55,8 +86,7 @@ export async function generateSku(options: GenerateSkuOptions): Promise<string> 
     );
   }
 
-  console.log(`[sku] Generated "${upper}${result.seq}"`);
-
+  console.log(`[sku] Generated "${upper}${result.seq}" (prior max was ${maxExisting})`);
   return `${upper}${result.seq}`;
 }
 
@@ -85,16 +115,20 @@ export async function generateSkuBatch(
   const allocatedSequences = new Map<string, { current: number }>();
 
   for (const [upper, count] of prefixCounts.entries()) {
-    const exists = await SkuSequence.exists({ prefix: upper });
-    if (!exists) {
-      const catalogMax = await findCatalogMax(upper, catalogConn);
-      await SkuSequence.findOneAndUpdate(
-        { prefix: upper },
-        { $setOnInsert: { seq: catalogMax } },
-        { upsert: true, returnDocument: "after" }
-      );
-    }
+    // A. Query highest existing SKU across Catalog DB and PrintJobs
+    const maxExisting = await findMaxExistingSequence(upper, catalogConn, printerConn);
 
+    // B. Atomically ensure SkuSequence.seq >= maxExisting (without rollbacks)
+    await SkuSequence.findOneAndUpdate(
+      { prefix: upper },
+      {
+        $setOnInsert: { prefix: upper },
+        $max: { seq: maxExisting },
+      },
+      { upsert: true, returnDocument: "after" }
+    );
+
+    // C. Atomically increment by the batch count
     const result = await SkuSequence.findOneAndUpdate(
       { prefix: upper },
       { $inc: { seq: count } },
