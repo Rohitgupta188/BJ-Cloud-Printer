@@ -3,13 +3,9 @@ import { withAuth } from "@/lib/auth";
 import { connectToCatalogDb } from "@/lib/db/catalog";
 import { connectToPrinterDb } from "@/lib/db/printer";
 import { getSkuSequenceModel } from "@/models/printer/SkuSequence";
-import { getCatalogModel } from "@/models/catalog/Catalog";
-import { getPrintJobModel } from "@/models/printer/PrintJob";
+import { findMaxExistingSequence } from "@/lib/sku/generate";
+import { formatPrinterSku } from "@/lib/sku/sku-utils";
 import { error, success, serverError } from "@/lib/api-handling/api-response";
-
-function escapeRegex(text: string): string {
-  return text.replace(/[$()*+.?[\\\]^{|}]/g, "\\$&");
-}
 
 export const GET = withAuth(async (request: NextRequest) => {
   const url = new URL(request.url);
@@ -26,31 +22,20 @@ export const GET = withAuth(async (request: NextRequest) => {
     ]);
 
     const SkuSequence = getSkuSequenceModel(printerConn);
-    const existing = await SkuSequence.findOne({ prefix: rawPrefix }, { seq: 1 }).lean();
+    const [existingSeqDoc, maxExisting] = await Promise.all([
+      SkuSequence.findOne({ prefix: rawPrefix }, { seq: 1 }).lean(),
+      findMaxExistingSequence(rawPrefix, catalogConn, printerConn),
+    ]);
 
-    let nextSeq: number;
+    // Ensure preview is strictly greater than both Printer DB counter and Catalog max
+    const currentMax = Math.max(existingSeqDoc?.seq ?? 0, maxExisting);
+    const nextSeq = currentMax + 1;
 
-    if (existing && existing.seq > 0) {
-      nextSeq = existing.seq + 1;
-    } else {
-      const regex = { $regex: `^${escapeRegex(rawPrefix)}(\\d+)$`, $options: "" };
+    const baseSku = `${rawPrefix}${nextSeq}`;
+    const previewSku = formatPrinterSku(baseSku);
 
-      const [catalogDocs, jobDocs] = await Promise.all([
-        getCatalogModel(catalogConn).find({ sku: regex }, { sku: 1, _id: 0 }).lean(),
-        getPrintJobModel(printerConn).find({ sku: regex }, { sku: 1, _id: 0 }).lean(),
-      ]);
-
-      let max = 0;
-      for (const doc of [...catalogDocs, ...jobDocs]) {
-        const n = parseInt(doc.sku.slice(rawPrefix.length), 10);
-        if (!isNaN(n) && n > max) max = n;
-      }
-
-      nextSeq = max + 1;
-    }
-
-    const previewSku = `${rawPrefix}${nextSeq}`;
-    return success({ sku: previewSku, rfid: previewSku });
+    // Non-allocating preview: reads only, never consumes sequence numbers
+    return success({ sku: previewSku, rfid: previewSku, rawSku: baseSku });
   } catch (err) {
     console.error("[GET /api/sku/preview]", err);
     return serverError("Failed to preview SKU");
