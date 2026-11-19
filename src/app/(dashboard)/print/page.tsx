@@ -14,6 +14,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { csrfHeaders } from "@/lib/security/csrf-client";
 import { authFetch } from "@/lib/auth/auth-fetch";
+import { ikUrl } from "@/lib/ikUrl";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -730,6 +731,16 @@ function JobRow({
     async (dn: string, imgName?: string) => {
       const trimmed = dn.trim();
       const trimmedImg = (imgName || "").trim();
+
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        onChange({ imageUrl: trimmed, imageLoading: false });
+        return;
+      }
+      if (trimmedImg.startsWith("http://") || trimmedImg.startsWith("https://")) {
+        onChange({ imageUrl: trimmedImg, imageLoading: false });
+        return;
+      }
+
       const lookup = trimmed || (trimmedImg ? trimmedImg.replace(/\.jpg$/i, "") : "");
       if (!lookup) {
         onChange({ imageUrl: undefined });
@@ -1142,7 +1153,7 @@ function JobRow({
                 ) : row.imageUrl ? (
                   <>
                     <img
-                      src={row.imageUrl}
+                      src={ikUrl(row.imageUrl)!}
                       alt={row.designNumber || "Product Image"}
                       className="max-h-56 max-w-full rounded-lg object-contain shadow-lg ring-1 ring-border/20"
                     />
